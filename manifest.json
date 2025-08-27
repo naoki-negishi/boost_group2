@@ -3,7 +3,7 @@
   "name": "Literature Manager",
   "version": "1.0",
   "description": "Upload and manage academic papers with summary and search.",
-  "permissions": ["storage", "scripting"],
+  "permissions": ["storage", "scripting", "tabs"],
   "background": {
     "service_worker": "background.js"
   },
@@ -11,5 +11,5 @@
     "default_popup": "popup.html",
     "default_icon": "icon.png"
   },
-  "host_permissions": ["<all_urls>"]
+  "host_permissions": ["https://export.arxiv.org/*","<all_urls>"]
 }

@@ -1,6 +1,8 @@
 body {
   font-family: sans-serif;
   padding: 10px;
+  width: 400px;
+  height: 500px;
 }
 h1 {
   font-size: 18px;
