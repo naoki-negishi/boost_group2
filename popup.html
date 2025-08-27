@@ -8,13 +8,16 @@
 <body>
   <h1>Literature Search</h1>
   <input type="text" id="searchBox" placeholder="Search papers..." /><br>
+  <input type="file" id="fileInput" style="display: none;" />
 
   <button id="saveUploadBtn">Save / Upload PDF</button>
   <button id="clusterBtn">Clustering</button>
   <button id="suggestBtn">Suggest</button>
   <button id="clearCache">Clear Cache</button>
 
+  <h3>Latest 5 Saved Papers:</h3>
   <ul id="paperList"></ul>
+  <h3>Daily Suggested 5 Papers:</h3>
   <ul id="suggestList"></ul>
 
   <script src="save_upload.js"></script>
