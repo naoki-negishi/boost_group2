@@ -1,6 +1,6 @@
 # boost_group2
 A Google Chrome extension that hogehoge.
-
+![image](https://github.com/naoki-negishi/boost_group2/tree/main/images/screen_shot.gif)
 
 ## Features
 - Summarize paper with prompt
