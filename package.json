@@ -1,0 +1,45 @@
+{
+  "name": "literature-manager-chrome-extension",
+  "version": "1.0.0",
+  "description": "Intelligent literature management with AI-powered analysis and clustering",
+  "main": "popup.js",
+  "scripts": {
+    "test": "jest",
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "lint": "eslint *.js",
+    "package": "npm run build && zip -r literature-manager.zip . -x node_modules/\\* .git/\\* *.log",
+    "clean": "rm -rf dist/ *.zip"
+  },
+  "keywords": [
+    "chrome-extension",
+    "literature-management",
+    "academic-research",
+    "pdf-analysis",
+    "clustering",
+    "ai-powered"
+  ],
+  "author": "Literature Manager Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/literature-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/literature-manager/issues"
+  },
+  "homepage": "https://github.com/your-username/literature-manager#readme",
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "webpack": "^5.0.0",
+    "webpack-cli": "^4.0.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "browserslist": [
+    "Chrome >= 88"
+  ]
+}
