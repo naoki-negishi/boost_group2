@@ -16,10 +16,15 @@ function updateSuggestions() {
       const xml = await fetch(url).then(r => r.text());
       const doc = new DOMParser().parseFromString(xml, "application/xml");
 
-      const entries = Array.from(doc.getElementsByTagName("entry")).map(e => ({
-        title: e.getElementsByTagName("title")[0].textContent.trim(),
-        link: e.getElementsByTagName("id")[0].textContent.trim()
-      }));
+
+      const entries = Array.from(doc.getElementsByTagName("entry")).map(e => {
+        const publishedEl = e.getElementsByTagName("published")[0];
+        return {
+          title: e.getElementsByTagName("title")[0].textContent.trim(),
+          link: e.getElementsByTagName("id")[0].textContent.trim(),
+          published: publishedEl ? publishedEl.textContent.split("T")[0] : ""
+        };
+      });
       displaySuggestions(entries);
     } catch (err) {
       console.error("Suggestion fetch failed", err);

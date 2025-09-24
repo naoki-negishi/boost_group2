@@ -126,4 +126,9 @@ function loadPapers() {
   });
 }
 
-setInterval(loadPapers, 100);
+loadPapers();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.papers) {
+    renderPapers(changes.papers.newValue || []);
+  }
+});

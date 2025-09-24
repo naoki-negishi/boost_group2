@@ -18,7 +18,7 @@ function showToast(message) {
 }
 
 document.getElementById("clearCache").addEventListener("click", () => {
-  chrome.storage.local.remove("papers", () => {
+  chrome.storage.local.clear(() => {
     showToast("All cache cleared");
   });
 });
