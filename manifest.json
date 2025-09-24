@@ -6,9 +6,12 @@
   "permissions": [
     "storage",
     "activeTab",
-    "alarms"
+    "alarms",
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
+    "https://export.arxiv.org/*",
     "https://*/*"
   ],
   "action": {
