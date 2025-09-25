@@ -29,27 +29,6 @@ class BackgroundService {
         }
     }
 
-    async getApiInterface() {
-        if (this.apiInterface) {
-            return this.apiInterface;
-        }
-
-        try {
-            if (typeof LiteratureAPI === 'undefined') {
-                importScripts('api_interfaces.js');
-            }
-
-            this.apiInterface = new LiteratureAPI({
-                baseUrl: this.apiBaseUrl
-            });
-        } catch (error) {
-            console.error('Failed to initialize API interface:', error);
-            throw error;
-        }
-
-        return this.apiInterface;
-    }
-
     /**
      * Setup event listeners for extension lifecycle
      */
@@ -240,8 +219,7 @@ class BackgroundService {
         try {
             console.log('Starting document analysis...');
 
-            const api = await this.getApiInterface();
-            const apiResult = await api.analyzeDocument(
+            const apiResult = await sendPdfToPython(
                 documentData.fileData,
                 documentData.fileName,
             );
@@ -261,6 +239,20 @@ class BackgroundService {
         } finally {
             this.isProcessing = false;
         }
+    }
+
+    async function sendPdfToPython(fileData, fileName) {
+        const response = await fetch("http://127.0.0.1:5000/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: {
+                filename: fileName,
+                data: fileData
+            }
+        });
+
+        const result = await response.json();
+        console.log("API result:", result);
     }
 
     /**

@@ -305,7 +305,7 @@ class LiteratureAPI {
         const base64Regex = /^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/;
         return base64Regex.test(value.replace(/\s+/g, ''));
     }
-}
+
 
     /**
      * Clustering API
@@ -618,146 +618,9 @@ class LiteratureAPI {
     }
 }
 
-/**
- * Mock API Implementation for Testing
- * Use this when AWS API is not available
- */
-// class MockLiteratureAPI extends LiteratureAPI {
-//     constructor(config = {}) {
-//         super(config);
-//         this.mockDelay = config.mockDelay || 1000; // Simulate API delay
-//     }
-//
-//     async analyzeDocument(fileData, fileName) {
-//         await this.delay(this.mockDelay);
-//
-//         return {
-//             id: this.generateId(),
-//             title: fileName.replace('.pdf', '').replace(/[_-]/g, ' '),
-//             authors: ['Mock Author A.', 'Test Researcher B.'],
-//             abstract: 'This is a mock abstract generated for testing purposes. The actual implementation would extract the real abstract from the PDF using advanced text processing techniques.',
-//             keywords: ['research', 'analysis', 'mock', 'testing', 'academic'],
-//             summary: 'Mock summary: This paper presents a comprehensive analysis of the topic using advanced methodologies and provides significant insights for future research.',
-//             findings: [
-//                 'Key finding 1: Significant improvement in performance metrics',
-//                 'Key finding 2: Novel approach shows promising results',
-//                 'Key finding 3: Framework applicable to broader contexts'
-//             ],
-//             confidence_score: 0.85,
-//             metadata: {
-//                 page_count: Math.floor(Math.random() * 20) + 5,
-//                 word_count: Math.floor(Math.random() * 5000) + 3000,
-//                 language: 'en',
-//                 document_type: 'academic_paper',
-//                 references: []
-//             },
-//             processing_info: {
-//                 processed_date: new Date().toISOString(),
-//                 processing_time: this.mockDelay / 1000,
-//                 api_version: 'mock_1.0'
-//             }
-//         };
-//     }
-//
-//     async performClustering(papers) {
-//         await this.delay(this.mockDelay);
-//
-//         // Simple mock clustering based on keywords
-//         const clusters = new Map();
-//
-//         papers.forEach(paper => {
-//             const mainKeyword = paper.keywords[0] || 'general';
-//             if (!clusters.has(mainKeyword)) {
-//                 clusters.set(mainKeyword, []);
-//             }
-//             clusters.get(mainKeyword).push(paper.id);
-//         });
-//
-//         const clusterArray = Array.from(clusters.entries()).map(([keyword, paperIds], index) => ({
-//             id: `cluster_${index + 1}`,
-//             name: this.capitalizeFirstLetter(keyword),
-//             description: `Papers related to ${keyword} research`,
-//             color: this.generateClusterColor(index),
-//             papers: paperIds,
-//             keywords: [keyword],
-//             similarity_score: 0.7 + Math.random() * 0.2,
-//             size: paperIds.length,
-//             created_date: new Date().toISOString()
-//         }));
-//
-//         return {
-//             clusters: clusterArray,
-//             algorithm_info: {
-//                 algorithm: 'mock_keyword_clustering',
-//                 parameters: { similarity_threshold: 0.7 },
-//                 execution_time: this.mockDelay / 1000
-//             },
-//             quality_metrics: {
-//                 silhouette_score: 0.6 + Math.random() * 0.3,
-//                 inertia: null,
-//                 num_clusters: clusterArray.length
-//             }
-//         };
-//     }
-//
-//     async fetchRelatedWork(interests) {
-//         await this.delay(this.mockDelay);
-//
-//         const mockPapers = [
-//             {
-//                 id: 'related_1',
-//                 title: 'Attention Is All You Need',
-//                 authors: ['Vaswani, A.', 'Shazeer, N.', 'Parmar, N.'],
-//                 venue: 'NIPS 2017',
-//                 year: 2017,
-//                 url: 'https://arxiv.org/abs/1706.03762',
-//                 abstract: 'We propose a new simple network architecture, the Transformer, based solely on attention mechanisms...',
-//                 keywords: ['attention', 'transformer', 'neural networks'],
-//                 relevance_score: 0.95,
-//                 citation_count: 50000,
-//                 published_date: '2017-06-12T00:00:00Z',
-//                 source: 'arxiv'
-//             },
-//             {
-//                 id: 'related_2',
-//                 title: 'BERT: Pre-training of Deep Bidirectional Transformers',
-//                 authors: ['Devlin, J.', 'Chang, M.', 'Lee, K.'],
-//                 venue: 'NAACL 2019',
-//                 year: 2019,
-//                 url: 'https://arxiv.org/abs/1810.04805',
-//                 abstract: 'We introduce a new language representation model called BERT...',
-//                 keywords: ['bert', 'pre-training', 'nlp'],
-//                 relevance_score: 0.92,
-//                 citation_count: 30000,
-//                 published_date: '2018-10-11T00:00:00Z',
-//                 source: 'arxiv'
-//             }
-//         ];
-//
-//         return mockPapers;
-//     }
-//
-//     async generateAudioSummary(text) {
-//         await this.delay(this.mockDelay);
-//
-//         // Mock audio URL - in real implementation, this would be a URL to generated audio
-//         return `data:audio/mp3;base64,mock_audio_data_${Date.now()}`;
-//     }
-//
-//     capitalizeFirstLetter(string) {
-//         return string.charAt(0).toUpperCase() + string.slice(1);
-//     }
-//
-//     delay(ms) {
-//         return new Promise(resolve => setTimeout(resolve, ms));
-//     }
-// }
-
 // Export API classes
 if (typeof module !== 'undefined' && module.exports) {
-    // module.exports = { LiteratureAPI, MockLiteratureAPI };
     module.exports = { LiteratureAPI };
 } else {
     window.LiteratureAPI = LiteratureAPI;
-    // window.MockLiteratureAPI = MockLiteratureAPI;
 }
