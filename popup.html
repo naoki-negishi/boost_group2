@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Literature Manager</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>📚 Literature Manager</h1>
+    </div>
+
+    <div class="main-buttons">
+        <button class="btn" id="uploadBtn">
+            📤 Upload
+        </button>
+        <button class="btn" id="clusterBtn">
+            🔗 Cluster
+        </button>
+        <button class="btn" id="searchBtn">
+            🔍 Search
+        </button>
+        <button class="btn" id="relatedBtn">
+            🌐 Daily Related Work
+        </button>
+        <button class="btn secondary" id="storageInfoBtn">
+            💾 Storage Info
+        </button>
+    </div>
+
+    <div class="status-panel">
+        <div class="status-item">
+            <span>Total Papers:</span>
+            <span class="status-value" id="totalPapers">0</span>
+        </div>
+        <div class="status-item">
+            <span>Clusters:</span>
+            <span class="status-value" id="totalClusters">0</span>
+        </div>
+        <div class="status-item">
+            <span>Last Updated:</span>
+            <span class="status-value" id="lastUpdated">--</span>
+        </div>
+
+        <!-- Research Topics Display Area -->
+        <div class="clusters-preview" id="clustersPreview" style="display: none;">
+            <div class="clusters-header">
+                📁 Research Topics:
+            </div>
+            <div class="clusters-list" id="clustersList"></div>
+        </div>
+    </div>
+
+    <!-- Upload Popup -->
+    <div class="popup-overlay" id="uploadPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>📤 Upload & Analysis</h2>
+                <button class="close-btn" data-close="uploadPopup">&times;</button>
+            </div>
+
+            <div class="upload-area" id="uploadArea">
+                <div>
+                    <p style="font-size: 18px; margin-bottom: 10px;">📎 Drag PDF files here</p>
+                    <p style="color: #666; font-size: 14px;">or click the button below to select files</p>
+                    <input type="file" class="file-input" id="fileInput" accept=".pdf" multiple>
+                    <button class="upload-btn" type="button" id="selectFilesBtn">
+                        Select Files
+                    </button>
+                </div>
+            </div>
+
+            <div class="progress-bar" id="progressBar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+
+            <div class="analysis-result" id="analysisResult">
+                <h3>Analysis Results</h3>
+                <div id="analysisContent"></div>
+                <button class="upload-btn" id="playAudioBtn" style="margin-top: 10px; display: none;">
+                    🔊 Play Audio Summary
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cluster Popup -->
+    <div class="popup-overlay" id="clusterPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>🔗 Cluster Analysis</h2>
+                <button class="close-btn" data-close="clusterPopup">&times;</button>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <button class="upload-btn" id="reclusterBtn">🔄 Re-cluster</button>
+                <button class="upload-btn" id="exportClustersBtn" style="margin-left: 10px;">📊 Export Clusters</button>
+            </div>
+
+            <div class="cluster-grid" id="clusterGrid">
+                <!-- Dynamically generated cluster cards -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Popup -->
+    <div class="popup-overlay" id="searchPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>🔍 Search Papers</h2>
+                <button class="close-btn" data-close="searchPopup">&times;</button>
+            </div>
+
+            <div class="search-container">
+                <input type="text" class="search-input" id="paperSearchInput" placeholder="Search papers by title, author, keywords...">
+
+                <div class="search-filters" id="searchFilters">
+                    <button class="filter-btn active" data-filter="all">All Papers</button>
+                    <!-- Cluster filter buttons will be dynamically generated here -->
+                </div>
+            </div>
+
+            <div class="paper-list" id="paperList">
+                <!-- Search results will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Paper Detail Popup -->
+    <div class="popup-overlay" id="paperDetailPopup">
+        <div class="popup-content paper-detail-content">
+            <div class="popup-header">
+                <h2 id="paperDetailTitle">📄 Paper Details</h2>
+                <button class="close-btn" data-close="paperDetailPopup">&times;</button>
+            </div>
+
+            <div class="paper-detail-body" id="paperDetailBody">
+                <!-- Paper details will be dynamically loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Related Work Popup -->
+    <div class="popup-overlay" id="relatedPopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>🌐 Daily Related Work</h2>
+                <button class="close-btn" data-close="relatedPopup">&times;</button>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
+                    Discover new papers related to your research interests
+                </p>
+                <button class="upload-btn" id="fetchRelatedBtn">🔄 Fetch Latest Papers</button>
+                <button class="upload-btn" id="configureInterestsBtn" style="margin-left: 10px;">⚙️ Configure Interests</button>
+            </div>
+
+            <div class="related-list" id="relatedList">
+                <!-- Dynamically generated related literature list -->
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
