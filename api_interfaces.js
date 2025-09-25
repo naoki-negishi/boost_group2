@@ -3,9 +3,6 @@
  * This file contains all the API interface definitions and mock implementations
  * Replace mock implementations with actual AWS API calls
  */
-const {DocumentProcessorServiceClient} = require('@google-cloud/documentai').v1;
-const {LanguageServiceClient} = require('@google-cloud/language').v2;
-const {VertexAI} = require('@google-cloud/vertexai');
 
 class LiteratureAPI {
     constructor(config = {}) {
@@ -140,14 +137,15 @@ class LiteratureAPI {
         ];
         const name = nameParts.join('/');
 
-        const contentBuffer = Buffer.isBuffer(fileData)
-            ? fileData
-            : Buffer.from(fileData, this.isBase64(fileData) ? 'base64' : undefined);
+        // const contentBuffer = Buffer.isBuffer(fileData)
+        //     ? fileData
+        //     : Buffer.from(fileData, this.isBase64(fileData) ? 'base64' : undefined);
 
         const request = {
             name,
             rawDocument: {
-                content: contentBuffer,
+                // content: contentBuffer,
+                content: fileData,
                 mimeType: 'application/pdf'
             }
         };

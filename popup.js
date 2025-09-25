@@ -257,7 +257,6 @@ class LiteratureManager {
                 const fileData = await this.readFileAsBase64(file);
 
                 // Send to AWS API for analysis
-                // const analysisResults = await this.analyzeDocument(fileData, file.name);
                 const analysisResults = await this.analyzeDocument(fileData, file);
                 alert('Analysis Results: ' + JSON.stringify(analysisResults));
 

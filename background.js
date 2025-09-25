@@ -160,7 +160,6 @@ class BackgroundService {
      */
     async handleMessage(message, sender, sendResponse) {
         console.log('Received message:', message.type);
-        alert('バックグラウンドで処理を開始しました。完了までしばらくお待ちください。');
 
         try {
             switch (message.type) {
@@ -238,7 +237,6 @@ class BackgroundService {
         }
         this.isProcessing = true;
 
-        // alert(documentData.fileName + 'の解析を開始しました。完了までしばらくお待ちください。');
         try {
             console.log('Starting document analysis...');
 
