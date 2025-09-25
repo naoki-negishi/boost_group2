@@ -257,7 +257,9 @@ class LiteratureManager {
                 const fileData = await this.readFileAsBase64(file);
 
                 // Send to AWS API for analysis
-                const analysisResults = await this.analyzeDocument(fileData, file.name);
+                // const analysisResults = await this.analyzeDocument(fileData, file.name);
+                const analysisResults = await this.analyzeDocument(fileData, file);
+                alert('Analysis Results: ' + JSON.stringify(analysisResults));
 
                 // Store the processed paper
                 await this.storePaper(analysisResults, file);
@@ -309,34 +311,29 @@ class LiteratureManager {
     /**
      * Analyze document using AWS API
      */
-    async analyzeDocument(fileData, fileName) {
-        // TODO: Replace with actual AWS API endpoint
-        const API_ENDPOINT = 'https://your-aws-api.com/analyze';
-
+    async analyzeDocument(fileData, file) {
         try {
-            const response = await fetch(API_ENDPOINT, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer YOUR_API_KEY' // TODO: Implement proper auth
-                },
-                body: JSON.stringify({
-                    file_data: fileData,
-                    file_name: fileName,
-                    file_type: 'pdf'
-                })
+            const payload = {
+                fileData,
+                fileName: file.name || 'document.pdf',
+                fileType: file.type || 'application/pdf',
+                fileSize: file.size || 0
+            };
+
+            const response = await chrome.runtime.sendMessage({
+                type: 'ANALYZE_DOCUMENT',
+                data: payload
             });
 
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.statusText}`);
+            if (!response?.success) {
+                throw new Error(response?.error || 'Background analysis failed');
             }
 
-            return await response.json();
+            return response.data;
         } catch (error) {
             console.error('API Error:', error);
-
             // Fallback: create mock analysis result
-            return this.createMockAnalysis(fileName);
+            // return this.createMockAnalysis(fileName);
         }
     }
 

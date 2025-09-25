@@ -7,7 +7,8 @@ class BackgroundService {
     constructor() {
         this.apiBaseUrl = 'https://your-aws-api.com'; // TODO: Replace with actual API URL
         this.isProcessing = false;
-        
+        this.apiInterface = null;
+
         this.init();
     }
 
@@ -16,16 +17,37 @@ class BackgroundService {
      */
     init() {
         console.log('Literature Manager Background Service started');
-        
+
         // Setup event listeners
         this.setupEventListeners();
-        
+
         // Setup periodic tasks (check if alarms API is available)
         if (chrome.alarms) {
             this.setupPeriodicTasks();
         } else {
             console.warn('Chrome alarms API not available');
         }
+    }
+
+    async getApiInterface() {
+        if (this.apiInterface) {
+            return this.apiInterface;
+        }
+
+        try {
+            if (typeof LiteratureAPI === 'undefined') {
+                importScripts('api_interfaces.js');
+            }
+
+            this.apiInterface = new LiteratureAPI({
+                baseUrl: this.apiBaseUrl
+            });
+        } catch (error) {
+            console.error('Failed to initialize API interface:', error);
+            throw error;
+        }
+
+        return this.apiInterface;
     }
 
     /**
@@ -56,7 +78,7 @@ class BackgroundService {
      */
     async handleInstallation(details) {
         console.log('Extension installed/updated:', details.reason);
-        
+
         if (details.reason === 'install') {
             // First time installation
             await this.initializeStorage();
@@ -101,10 +123,10 @@ class BackgroundService {
     async migrateData(previousVersion) {
         try {
             const currentData = await chrome.storage.local.get(null);
-            
+
             // Add any new fields that might be missing
             const updates = {};
-            
+
             if (!currentData.settings) {
                 updates.settings = {
                     autoCluster: true,
@@ -138,14 +160,15 @@ class BackgroundService {
      */
     async handleMessage(message, sender, sendResponse) {
         console.log('Received message:', message.type);
+        alert('バックグラウンドで処理を開始しました。完了までしばらくお待ちください。');
 
         try {
             switch (message.type) {
-                case 'ANALYZE_DOCUMENT':
+                case 'ANALYZE_DOCUMENT':{
                     const analysisResult = await this.analyzeDocument(message.data);
                     sendResponse({ success: true, data: analysisResult });
                     break;
-
+                }
                 case 'PERFORM_CLUSTERING':
                     const clusterResult = await this.performClustering(message.data);
                     sendResponse({ success: true, data: clusterResult });
@@ -186,7 +209,7 @@ class BackgroundService {
     handleStorageChange(changes, namespace) {
         if (namespace === 'local') {
             console.log('Storage changed:', Object.keys(changes));
-            
+
             // Notify any listening components about data changes
             chrome.runtime.sendMessage({
                 type: 'STORAGE_UPDATED',
@@ -194,60 +217,6 @@ class BackgroundService {
             }).catch(() => {
                 // Ignore errors if no listeners
             });
-        }
-    }
-
-    /**
-     * Analyze document using AWS API
-     */
-    async analyzeDocument(documentData) {
-        if (this.isProcessing) {
-            throw new Error('Another document is currently being processed');
-        }
-
-        this.isProcessing = true;
-
-        try {
-            console.log('Starting document analysis...');
-
-            // Call AWS API for document analysis
-            const response = await fetch(`${this.apiBaseUrl}/analyze`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.getApiAuthToken()
-                },
-                body: JSON.stringify({
-                    file_data: documentData.fileData,
-                    file_name: documentData.fileName,
-                    file_type: documentData.fileType,
-                    options: {
-                        extract_text: true,
-                        extract_metadata: true,
-                        generate_summary: true,
-                        identify_keywords: true,
-                        analyze_structure: true
-                    }
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-            }
-
-            const result = await response.json();
-            
-            console.log('Document analysis completed');
-            return this.processAnalysisResult(result, documentData);
-
-        } catch (error) {
-            console.error('Document analysis error:', error);
-            
-            // Fallback to local processing for demo purposes
-            return this.performLocalAnalysis(documentData);
-            
-        } finally {
-            this.isProcessing = false;
         }
     }
 
@@ -261,73 +230,39 @@ class BackgroundService {
     }
 
     /**
-     * Process analysis result from AWS API
+     * Analyze document using AWS API
      */
-    processAnalysisResult(apiResult, originalData) {
-        return {
-            id: this.generateUniqueId(),
-            title: apiResult.title || originalData.fileName.replace('.pdf', ''),
-            authors: apiResult.authors || [],
-            abstract: apiResult.abstract || '',
-            keywords: apiResult.keywords || [],
-            summary: apiResult.summary || '',
-            findings: apiResult.key_findings || [],
-            confidence_score: apiResult.confidence || 0.8,
-            metadata: {
-                page_count: apiResult.page_count,
-                word_count: apiResult.word_count,
-                language: apiResult.language || 'en',
-                document_type: apiResult.document_type || 'academic_paper'
-            },
-            processing_info: {
-                processed_date: new Date().toISOString(),
-                processing_time: apiResult.processing_time,
-                api_version: apiResult.api_version
-            },
-            file_info: {
-                original_name: originalData.fileName,
-                size: originalData.fileSize,
-                type: originalData.fileType
-            }
-        };
-    }
+    async analyzeDocument(documentData) {
+        if (this.isProcessing) {
+            throw new Error('Another document is currently being processed');
+        }
+        this.isProcessing = true;
 
-    /**
-     * Perform local analysis as fallback
-     */
-    performLocalAnalysis(documentData) {
-        console.log('Performing local analysis fallback...');
-        
-        return {
-            id: this.generateUniqueId(),
-            title: documentData.fileName.replace('.pdf', '').replace(/[_-]/g, ' '),
-            authors: ['Unknown Author'],
-            abstract: 'Abstract extraction requires server-side processing. This is a placeholder abstract.',
-            keywords: ['research', 'analysis', 'academic'],
-            summary: 'This document has been uploaded but requires server-side processing for full analysis.',
-            findings: [
-                'Document successfully uploaded',
-                'Basic metadata extracted',
-                'Ready for clustering analysis'
-            ],
-            confidence_score: 0.6,
-            metadata: {
-                page_count: 0,
-                word_count: 0,
-                language: 'en',
-                document_type: 'academic_paper'
-            },
-            processing_info: {
-                processed_date: new Date().toISOString(),
-                processing_time: 0.5,
-                api_version: 'local_fallback'
-            },
-            file_info: {
-                original_name: documentData.fileName,
-                size: documentData.fileSize || 0,
-                type: documentData.fileType || 'application/pdf'
-            }
-        };
+        // alert(documentData.fileName + 'の解析を開始しました。完了までしばらくお待ちください。');
+        try {
+            console.log('Starting document analysis...');
+
+            const api = await this.getApiInterface();
+            const apiResult = await api.analyzeDocument(
+                documentData.fileData,
+                documentData.fileName,
+            );
+
+            console.log('Document analysis completed');
+            return {
+                id: this.generateUniqueId(),
+                ...apiResult,
+                file_info: {
+                    original_name: documentData.fileName,
+                    size: documentData.fileSize,
+                    type: documentData.fileType
+                }
+            };
+        } catch (error) {
+            console.error('Document analysis error:', error);
+        } finally {
+            this.isProcessing = false;
+        }
     }
 
     /**
@@ -370,7 +305,7 @@ class BackgroundService {
 
         } catch (error) {
             console.error('Clustering API error:', error);
-            
+
             // Fallback to simple local clustering
             return this.performLocalClustering(papers);
         }
@@ -411,10 +346,10 @@ class BackgroundService {
      */
     performLocalClustering(papers) {
         console.log('Performing local clustering fallback...');
-        
+
         // Simple keyword-based clustering
         const keywordGroups = {};
-        
+
         papers.forEach(paper => {
             const mainKeyword = paper.keywords[0] || 'general';
             if (!keywordGroups[mainKeyword]) {
@@ -482,7 +417,7 @@ class BackgroundService {
 
         } catch (error) {
             console.error('Related work API error:', error);
-            
+
             // Fallback to mock data
             return this.generateMockRelatedWork();
         }
@@ -550,7 +485,7 @@ class BackgroundService {
 
         } catch (error) {
             console.error('Summary generation error:', error);
-            
+
             // Fallback to simple summary
             return this.generateLocalSummary(papers);
         }
@@ -565,7 +500,7 @@ class BackgroundService {
         const totalPapers = papers.length;
         const recentPaper = papers[papers.length - 1];
         const allKeywords = [...new Set(papers.flatMap(p => p.keywords))];
-        
+
         return `You have ${totalPapers} papers in your library. The most recent addition is "${recentPaper.title}". Key research areas include: ${allKeywords.slice(0, 5).join(', ')}. Your collection covers diverse topics in ${allKeywords.length} different keyword areas.`;
     }
 
@@ -577,7 +512,7 @@ class BackgroundService {
 
         try {
             const data = await chrome.storage.local.get(['papers', 'clusters']);
-            
+
             const exportData = {
                 metadata: {
                     export_date: new Date().toISOString(),
@@ -646,18 +581,22 @@ class BackgroundService {
         if (!papers || papers.length === 0) return '';
 
         return papers.map(paper => {
-            const key = (paper.title || 'untitled').replace(/[^a-zA-Z0-9]/g, '').substring(0, 20);
-            const authors = (paper.authors || []).join(' and ');
-            const year = new Date(paper.processed_date || Date.now()).getFullYear();
+          const title    = paper.title || "Untitled";
+          const authors  = (paper.authors || []).join(" and ") || "Unknown";
+          const year     = new Date(paper.processed_date || Date.now()).getFullYear();
+          const keywords = (paper.keywords || []).join(", ");
+          const key      = (title || "untitled").replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
 
-            return `@article{${key}${year},
-  title={${paper.title || 'Untitled'}},
-  author={${authors || 'Unknown'}},
-  year={${year}},
-  keywords={${(paper.keywords || []).join(', ')}},
-  note={Imported from Literature Manager}
-}`;
-        }).join('\n\n');
+          const fields = [
+            `  title={${title}}`,
+            `  author={${authors}}`,
+            `  year={${year}}`,
+            keywords ? `  keywords={${keywords}}` : null,
+            `  note={Imported from Literature Manager}`
+          ].filter(Boolean);
+
+          return `@article{${key}${year},\n${fields.join(",\n")}\n}`;
+        }).join("\n\n");
     }
 
     /**
@@ -669,7 +608,7 @@ class BackgroundService {
         try {
             // TODO: Implement data synchronization with cloud services
             // This could sync with Google Drive, Dropbox, or custom backend
-            
+
             return {
                 success: true,
                 message: 'Data synchronization not yet implemented',
@@ -740,10 +679,10 @@ class BackgroundService {
     async periodicRelatedWorkFetch() {
         try {
             const { userPreferences } = await chrome.storage.local.get(['userPreferences']);
-            
+
             if (userPreferences && userPreferences.researchInterests.length > 0) {
                 const relatedWork = await this.fetchRelatedWork(userPreferences.researchInterests);
-                
+
                 // Store related work with timestamp
                 await chrome.storage.local.set({
                     recentRelatedWork: {
@@ -771,7 +710,7 @@ class BackgroundService {
             if (data.recentRelatedWork) {
                 const fetchedDate = new Date(data.recentRelatedWork.fetched_date);
                 const daysSinceUpdate = (Date.now() - fetchedDate.getTime()) / (1000 * 60 * 60 * 24);
-                
+
                 if (daysSinceUpdate > 7) {
                     await chrome.storage.local.remove(['recentRelatedWork']);
                     cleaned = true;
