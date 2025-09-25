@@ -10,27 +10,55 @@ class LiteratureManager {
         this.currentFilter = 'all';
         this.searchQuery = '';
         this.uploadListenersSetup = false; // Flag to prevent duplicate setup
-        
+
         this.init();
     }
 
-    /**
-     * Initialize the extension
-     */
     async init() {
         console.log('Initializing Literature Manager...');
-        
+
         // Load existing data
         await this.loadData();
-        
+
         // Setup event listeners
         this.setupEventListeners();
-        
+
         // Update UI
         this.updateStatusPanel();
         this.updateClustersPreview();
-        
+
         console.log('Literature Manager initialized');
+    }
+
+    /**
+     * Send message to background service and handle response
+     */
+    async sendBackgroundRequest(type, data) {
+        return new Promise((resolve, reject) => {
+            try {
+                chrome.runtime.sendMessage({type, data}, (response) => {
+                    const runtimeError = chrome.runtime.lastError;
+
+                    if (runtimeError) {
+                        reject(new Error(runtimeError.message));
+                        return;
+                    }
+
+                    if (!response) {
+                        reject(new Error('No response from background script.'));
+                        return;
+                    }
+
+                    if (response.success) {
+                        resolve(response.data);
+                    } else {
+                        reject(new Error(response.error || 'An unknown error occurred during background processing.'));
+                    }
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
     }
 
     /**
@@ -49,13 +77,13 @@ class LiteratureManager {
 
         // Upload functionality
         this.setupUploadListeners();
-        
+
         // Cluster functionality
         this.setupClusterListeners();
-        
+
         // Search functionality
         this.setupSearchListeners();
-        
+
         // Related work functionality
         this.setupRelatedWorkListeners();
     }
@@ -102,7 +130,7 @@ class LiteratureManager {
      */
     setupUploadListeners() {
         console.log('Setting up upload listeners...');
-        
+
         // Use a flag to prevent duplicate listener setup
         if (this.uploadListenersSetup) {
             console.log('Upload listeners already setup, skipping...');
@@ -138,7 +166,7 @@ class LiteratureManager {
                 e.preventDefault();
                 e.stopPropagation();
                 console.log('Select Files button clicked');
-                
+
                 if (fileInput) {
                     fileInput.click();
                 } else {
@@ -198,7 +226,7 @@ class LiteratureManager {
      */
     setupSearchListeners() {
         const searchInput = document.getElementById('paperSearchInput');
-        
+
         // Real-time search
         searchInput.addEventListener('input', (e) => {
             this.searchQuery = e.target.value;
@@ -246,7 +274,7 @@ class LiteratureManager {
 
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
-                
+
                 // Update progress
                 const progress = ((i + 1) / files.length) * 100;
                 progressFill.style.width = `${progress}%`;
@@ -255,13 +283,13 @@ class LiteratureManager {
 
                 // Read file as base64
                 const fileData = await this.readFileAsBase64(file);
-                
+
                 // Send to AWS API for analysis
                 const analysisResults = await this.analyzeDocument(fileData, file.name);
-                
+
                 // Store the processed paper
                 await this.storePaper(analysisResults, file);
-                
+
                 // Update UI
                 this.updateStatusPanel();
             }
@@ -269,7 +297,7 @@ class LiteratureManager {
             // Show results
             progressBar.style.display = 'none';
             analysisResult.style.display = 'block';
-            
+
             analysisContent.innerHTML = `
                 <p><strong>Successfully processed ${files.length} file(s)</strong></p>
                 <p>Documents have been analyzed and added to your library.</p>
@@ -277,7 +305,7 @@ class LiteratureManager {
 
             // Enable audio summary button
             playAudioBtn.style.display = 'inline-block';
-            
+
             // Perform clustering if we have enough papers
             if (this.currentPapers.length >= 2) {
                 await this.performClustering();
@@ -310,35 +338,17 @@ class LiteratureManager {
      * Analyze document using AWS API
      */
     async analyzeDocument(fileData, fileName) {
-        // TODO: Replace with actual AWS API endpoint
-        const API_ENDPOINT = 'https://your-aws-api.com/analyze';
-        
         try {
-            const response = await fetch(API_ENDPOINT, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer YOUR_API_KEY' // TODO: Implement proper auth
-                },
-                body: JSON.stringify({
-                    file_data: fileData,
-                    file_name: fileName,
-                    file_type: 'pdf'
-                })
+            return await this.sendBackgroundRequest('ANALYZE_DOCUMENT', {
+                fileData,
+                fileName,
             });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.statusText}`);
-            }
-
-            return await response.json();
         } catch (error) {
-            console.error('API Error:', error);
-            
-            // Fallback: create mock analysis result
+            console.error('Document analyze request failed:', error);
             return this.createMockAnalysis(fileName);
         }
     }
+
 
     /**
      * Create mock analysis result for testing
@@ -374,7 +384,7 @@ class LiteratureManager {
         };
 
         this.currentPapers.push(paperData);
-        
+
         // Save to Chrome storage
         await chrome.storage.local.set({
             papers: this.currentPapers,
@@ -393,20 +403,20 @@ class LiteratureManager {
 
         try {
             console.log('Performing clustering analysis...');
-            
+
             // TODO: Implement actual clustering algorithm
             // For now, create mock clusters
             this.currentClusters = await this.createMockClusters();
-            
+
             // Save clusters
             await chrome.storage.local.set({
                 clusters: this.currentClusters
             });
-            
+
             // Update UI
             this.updateClustersPreview();
             this.displayClusters();
-            
+
             console.log('Clustering completed');
         } catch (error) {
             console.error('Clustering error:', error);
@@ -452,7 +462,7 @@ class LiteratureManager {
      */
     updateSearchFilters() {
         const filtersContainer = document.getElementById('searchFilters');
-        
+
         // Clear existing filters except "All Papers"
         const allButton = filtersContainer.querySelector('[data-filter="all"]');
         filtersContainer.innerHTML = '';
@@ -477,12 +487,12 @@ class LiteratureManager {
      */
     setSearchFilter(filter) {
         this.currentFilter = filter;
-        
+
         // Update button states
         document.querySelectorAll('.filter-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.filter === filter);
         });
-        
+
         // Perform search with new filter
         this.performSearch();
     }
@@ -528,7 +538,7 @@ class LiteratureManager {
 
         container.innerHTML = papers.map(paper => {
             const clusterName = this.getClusterForPaper(paper)?.name || 'Uncategorized';
-            
+
             return `
                 <div class="paper-card" data-paper-id="${paper.id}">
                     <div class="paper-title">${paper.title}</div>
@@ -565,7 +575,7 @@ class LiteratureManager {
 
         const cluster = this.getClusterForPaper(paper);
         const detailBody = document.getElementById('paperDetailBody');
-        
+
         detailBody.innerHTML = `
             <div class="paper-meta">
                 <div class="paper-meta-item">
@@ -632,7 +642,7 @@ class LiteratureManager {
             btn.addEventListener('click', (e) => {
                 const action = btn.getAttribute('data-action');
                 const paperId = btn.getAttribute('data-paper-id');
-                
+
                 switch(action) {
                     case 'read':
                         this.openPaperFile(paperId);
@@ -680,12 +690,12 @@ class LiteratureManager {
 
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        
+
         const a = document.createElement('a');
         a.href = url;
         a.download = `${paper.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
         a.click();
-        
+
         URL.revokeObjectURL(url);
     }
 
@@ -696,26 +706,26 @@ class LiteratureManager {
         if (!confirm('Are you sure you want to delete this paper?')) return;
 
         this.currentPapers = this.currentPapers.filter(p => p.id !== paperId);
-        
+
         // Update clusters
         this.currentClusters.forEach(cluster => {
             cluster.papers = cluster.papers.filter(p => p.id !== paperId);
         });
-        
+
         // Remove empty clusters
         this.currentClusters = this.currentClusters.filter(cluster => cluster.papers.length > 0);
-        
+
         // Save changes
         await chrome.storage.local.set({
             papers: this.currentPapers,
             clusters: this.currentClusters
         });
-        
+
         // Update UI
         this.updateStatusPanel();
         this.updateClustersPreview();
         this.closePopup('paperDetailPopup');
-        
+
         // Refresh search if search popup is open
         if (document.getElementById('searchPopup').style.display !== 'none') {
             this.performSearch();
@@ -730,25 +740,70 @@ class LiteratureManager {
         relatedList.innerHTML = '<div style="text-align: center; color: #666;">Fetching related papers...</div>';
 
         try {
-            // TODO: Implement actual API call to fetch related papers
-            // For now, create mock related papers
-            const relatedPapers = await this.createMockRelatedPapers();
-            
-            relatedList.innerHTML = relatedPapers.map(paper => `
+            const interests = this.getCurrentInterests();
+            const relatedPapers = await this.sendBackgroundRequest(
+                'FETCH_RELATED_WORK',
+                interests
+            );
+
+            const safeRelatedPapers = Array.isArray(relatedPapers) ? relatedPapers : [];
+
+            relatedList.innerHTML = safeRelatedPapers.map(paper => {
+                const authors = Array.isArray(paper.authors) ? paper.authors.join(', ') : '';
+                const venue = paper.venue || 'Unknown Venue';
+
+                return `
                 <div class="related-item" onclick="window.literatureManager.showRelatedPaperDetail('${paper.id}')">
                     <div class="related-title">${paper.title}</div>
-                    <div class="related-reason">Related to: ${paper.relatedTo}</div>
+                    <div class="related-reason">Related to: ${paper.relatedTo || 'your research interests'}</div>
                     <div style="font-size: 12px; color: #999; margin-top: 5px;">
-                        ${paper.authors.join(', ')} • ${paper.venue}
+                        ${authors} • ${venue}
                     </div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
 
         } catch (error) {
             console.error('Error fetching related work:', error);
             relatedList.innerHTML = '<div style="text-align: center; color: red;">Error fetching related papers</div>';
         }
     }
+    getCurrentInterests() {
+        const clusterKeywords = this.currentClusters.flatMap(cluster => cluster.keywords || []);
+        const paperKeywords = this.currentPapers.flatMap(paper => paper.keywords || []);
+        const combined = [...clusterKeywords, ...paperKeywords];
+
+        if (combined.length === 0) {
+            return ['research'];
+        }
+
+        return Array.from(new Set(combined)).slice(0, 20);
+    }
+
+    // async fetchRelatedWork() {
+    //     const relatedList = document.getElementById('relatedList');
+    //     relatedList.innerHTML = '<div style="text-align: center; color: #666;">Fetching related papers...</div>';
+    //
+    //     try {
+    //         // TODO: Implement actual API call to fetch related papers
+    //         // For now, create mock related papers
+    //         const relatedPapers = await this.createMockRelatedPapers();
+    //
+    //         relatedList.innerHTML = relatedPapers.map(paper => `
+    //             <div class="related-item" onclick="window.literatureManager.showRelatedPaperDetail('${paper.id}')">
+    //                 <div class="related-title">${paper.title}</div>
+    //                 <div class="related-reason">Related to: ${paper.relatedTo}</div>
+    //                 <div style="font-size: 12px; color: #999; margin-top: 5px;">
+    //                     ${paper.authors.join(', ')} • ${paper.venue}
+    //                 </div>
+    //             </div>
+    //         `).join('');
+    //
+    //     } catch (error) {
+    //         console.error('Error fetching related work:', error);
+    //         relatedList.innerHTML = '<div style="text-align: center; color: red;">Error fetching related papers</div>';
+    //     }
+    // }
 
     /**
      * Create mock related papers for testing
@@ -791,9 +846,9 @@ class LiteratureManager {
         try {
             // TODO: Implement text-to-speech functionality
             // This could use Web Speech API or send to AWS Polly
-            
+
             const summary = this.generateAudioSummary();
-            
+
             if ('speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(summary);
                 utterance.rate = 0.8;
@@ -812,13 +867,13 @@ class LiteratureManager {
      */
     generateAudioSummary() {
         const recentPapers = this.currentPapers.slice(-3); // Last 3 papers
-        
+
         let summary = `Summary of ${recentPapers.length} recently added papers: `;
-        
+
         recentPapers.forEach((paper, index) => {
             summary += `Paper ${index + 1}: ${paper.title}. ${paper.summary || 'Key findings include ' + (paper.findings || []).join(', ')}. `;
         });
-        
+
         return summary;
     }
 
@@ -827,7 +882,7 @@ class LiteratureManager {
      */
     displayClusters() {
         const clusterGrid = document.getElementById('clusterGrid');
-        
+
         clusterGrid.innerHTML = this.currentClusters.map(cluster => `
             <div class="cluster-card" data-cluster-id="${cluster.id}">
                 <div class="cluster-color" style="background-color: ${cluster.color}"></div>
@@ -871,12 +926,12 @@ class LiteratureManager {
 
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
-        
+
         const a = document.createElement('a');
         a.href = url;
         a.download = 'literature_clusters.json';
         a.click();
-        
+
         URL.revokeObjectURL(url);
     }
 
@@ -886,7 +941,7 @@ class LiteratureManager {
     updateStatusPanel() {
         document.getElementById('totalPapers').textContent = this.currentPapers.length;
         document.getElementById('totalClusters').textContent = this.currentClusters.length;
-        
+
         const lastUpdated = this.currentPapers.length > 0 
             ? new Date(Math.max(...this.currentPapers.map(p => new Date(p.processed_date)))).toLocaleDateString()
             : '--';
@@ -906,7 +961,7 @@ class LiteratureManager {
         }
 
         clustersPreview.style.display = 'block';
-        
+
         clustersList.innerHTML = this.currentClusters.map(cluster => `
             <div class="cluster-tag" data-cluster-id="${cluster.id}">
                 <div class="cluster-dot" style="background-color: ${cluster.color}"></div>
@@ -932,32 +987,12 @@ class LiteratureManager {
             const result = await chrome.storage.local.get(['papers', 'clusters']);
             this.currentPapers = result.papers || [];
             this.currentClusters = result.clusters || [];
-            
+
             console.log(`Loaded ${this.currentPapers.length} papers and ${this.currentClusters.length} clusters`);
         } catch (error) {
             console.error('Error loading data:', error);
             this.currentPapers = [];
             this.currentClusters = [];
-        }
-    }
-
-    /**
-     * Show storage information
-     */
-    async showStorageInfo() {
-        try {
-            const result = await chrome.storage.local.get(null);
-            const dataSize = JSON.stringify(result).length;
-            
-            alert(`Storage Information:
-            
-Papers: ${this.currentPapers.length}
-Clusters: ${this.currentClusters.length}
-Storage Used: ${(dataSize / 1024).toFixed(2)} KB
-            
-Last Updated: ${result.lastUpdated ? new Date(result.lastUpdated).toLocaleString() : 'Never'}`);
-        } catch (error) {
-            console.error('Error getting storage info:', error);
         }
     }
 
@@ -969,7 +1004,7 @@ Last Updated: ${result.lastUpdated ? new Date(result.lastUpdated).toLocaleString
         document.querySelectorAll('.popup-overlay').forEach(popup => {
             popup.style.display = 'none';
         });
-        
+
         // Show the requested popup
         document.getElementById(popupId).style.display = 'flex';
     }
@@ -989,18 +1024,18 @@ Last Updated: ${result.lastUpdated ? new Date(result.lastUpdated).toLocaleString
      */
     showPopup(popupId) {
         console.log('Showing popup:', popupId);
-        
+
         // Hide all popups first
         document.querySelectorAll('.popup-overlay').forEach(popup => {
             popup.style.display = 'none';
         });
-        
+
         // Show the requested popup
         const targetPopup = document.getElementById(popupId);
         if (targetPopup) {
             targetPopup.style.display = 'flex';
             console.log('Popup shown successfully:', popupId);
-            
+
             // Initialize popup-specific functionality
             if (popupId === 'searchPopup') {
                 this.initializeSearch();
@@ -1031,7 +1066,7 @@ Last Updated: ${result.lastUpdated ? new Date(result.lastUpdated).toLocaleString
             const result = await chrome.storage.local.get(['papers', 'clusters']);
             this.currentPapers = result.papers || [];
             this.currentClusters = result.clusters || [];
-            
+
             console.log(`Loaded ${this.currentPapers.length} papers and ${this.currentClusters.length} clusters`);
         } catch (error) {
             console.error('Error loading data:', error);
@@ -1047,59 +1082,25 @@ Last Updated: ${result.lastUpdated ? new Date(result.lastUpdated).toLocaleString
         try {
             const result = await chrome.storage.local.get(null);
             const dataSize = JSON.stringify(result).length;
-            
-            alert(`Storage Information:
-            
-Papers: ${this.currentPapers.length}
-Clusters: ${this.currentClusters.length}
-Storage Used: ${(dataSize / 1024).toFixed(2)} KB
-            
-Last Updated: ${result.lastUpdated ? new Date(result.lastUpdated).toLocaleString() : 'Never'}`);
+
+            const lines = [
+              "Storage Information:",
+              `Papers: ${this.currentPapers.length}`,
+              `Clusters: ${this.currentClusters.length}`,
+              `Storage Used: ${(dataSize / 1024).toFixed(2)} KB`,
+              "",
+              `Last Updated: ${
+                result.lastUpdated
+                  ? new Date(result.lastUpdated).toLocaleString()
+                  : "Never"
+              }`
+            ];
+            alert(lines.join("\n"));
         } catch (error) {
             console.error('Error getting storage info:', error);
         }
     }
-
-    /**
-     * Show popup by ID
-     */
-    showPopup(popupId) {
-        console.log('Showing popup:', popupId);
-        
-        // Hide all popups first
-        document.querySelectorAll('.popup-overlay').forEach(popup => {
-            popup.style.display = 'none';
-        });
-        
-        // Show the requested popup
-        const targetPopup = document.getElementById(popupId);
-        if (targetPopup) {
-            targetPopup.style.display = 'flex';
-            console.log('Popup shown successfully:', popupId);
-            
-            // Initialize popup-specific functionality
-            if (popupId === 'searchPopup') {
-                this.initializeSearch();
-            }
-        } else {
-            console.error('Popup not found:', popupId);
-        }
-    }
-
-    /**
-     * Close popup by ID
-     */
-    closePopup(popupId) {
-        console.log('Closing popup:', popupId);
-        const popup = document.getElementById(popupId);
-        if (popup) {
-            popup.style.display = 'none';
-            console.log('Popup closed successfully:', popupId);
-        } else {
-            console.error('Cannot close popup, not found:', popupId);
-        }
-    }
-}
+};
 
 // Initialize the extension when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
