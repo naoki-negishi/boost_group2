@@ -7,7 +7,8 @@ class BackgroundService {
     constructor() {
         this.apiBaseUrl = 'https://your-aws-api.com'; // TODO: Replace with actual API URL
         this.isProcessing = false;
-        
+        this.apiInterface = null;
+
         this.init();
     }
 
@@ -16,10 +17,10 @@ class BackgroundService {
      */
     init() {
         console.log('Literature Manager Background Service started');
-        
+
         // Setup event listeners
         this.setupEventListeners();
-        
+
         // Setup periodic tasks (check if alarms API is available)
         if (chrome.alarms) {
             this.setupPeriodicTasks();
@@ -198,6 +199,30 @@ class BackgroundService {
     }
 
     /**
+     * Ensure API interface is loaded when needed
+     */
+    async getApiInterface() {
+        if (this.apiInterface) {
+            return this.apiInterface;
+        }
+
+        try {
+            if (typeof GcpLiteratureAPI === 'undefined') {
+                importScripts('api_interfaces.js');
+            }
+
+            this.apiInterface = new GcpLiteratureAPI({
+                baseUrl: this.apiBaseUrl
+            });
+        } catch (error) {
+            console.error('Failed to initialize API interface:', error);
+            throw error;
+        }
+
+        return this.apiInterface;
+    }
+
+    /**
      * Analyze document using AWS API
      */
     async analyzeDocument(documentData) {
@@ -207,35 +232,44 @@ class BackgroundService {
 
         this.isProcessing = true;
 
+        // try {
+        //     console.log('Starting document analysis...');
+        //
+        //     // Call AWS API for document analysis
+        //     const response = await fetch(`${this.apiBaseUrl}/analyze`, {
+        //         method: 'POST',
+        //         headers: {
+        //             'Content-Type': 'application/json',
+        //             'Authorization': await this.getApiAuthToken()
+        //         },
+        //         body: JSON.stringify({
+        //             file_data: documentData.fileData,
+        //             file_name: documentData.fileName,
+        //             file_type: documentData.fileType,
+        //             options: {
+        //                 extract_text: true,
+        //                 extract_metadata: true,
+        //                 generate_summary: true,
+        //                 identify_keywords: true,
+        //                 analyze_structure: true
+        //             }
+        //         })
+        //     });
+        //
+        //     if (!response.ok) {
+        //         throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        //     }
+        //
+        //     const result = await response.json();
         try {
             console.log('Starting document analysis...');
 
-            // Call AWS API for document analysis
-            const response = await fetch(`${this.apiBaseUrl}/analyze`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.getApiAuthToken()
-                },
-                body: JSON.stringify({
-                    file_data: documentData.fileData,
-                    file_name: documentData.fileName,
-                    file_type: documentData.fileType,
-                    options: {
-                        extract_text: true,
-                        extract_metadata: true,
-                        generate_summary: true,
-                        identify_keywords: true,
-                        analyze_structure: true
-                    }
-                })
-            });
+            const api = await this.getApiInterface();
+            const result = await api.analyzeDocument(
+                documentData.fileData,
+                documentData.fileName,
+            );
 
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-            }
-
-            const result = await response.json();
             
             console.log('Document analysis completed');
             return this.processAnalysisResult(result, documentData);
@@ -278,6 +312,7 @@ class BackgroundService {
                 word_count: apiResult.word_count,
                 language: apiResult.language || 'en',
                 document_type: apiResult.document_type || 'academic_paper'
+                references: apiResult.references || []
             },
             processing_info: {
                 processed_date: new Date().toISOString(),
@@ -289,6 +324,7 @@ class BackgroundService {
                 size: originalData.fileSize,
                 type: originalData.fileType
             }
+            embeddings: apiResult.embeddings || null
         };
     }
 
@@ -458,34 +494,46 @@ class BackgroundService {
         console.log('Fetching related work...');
 
         try {
-            // Call related work API
-            const response = await fetch(`${this.apiBaseUrl}/related-work`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.getApiAuthToken()
-                },
-                body: JSON.stringify({
-                    interests: userInterests,
-                    limit: 10,
-                    time_range: '30d',
-                    venues: ['arxiv', 'acl', 'nips', 'icml', 'iclr']
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Related work API request failed: ${response.status}`);
-            }
-
-            const result = await response.json();
-            return result.papers;
-
+            const interests = Array.isArray(userInterests)
+                ? userInterests
+                : userInterests?.interests || [];
+            const api = await this.getApiInterface();
+            return await api.fetchRelatedWork(interests);
         } catch (error) {
             console.error('Related work API error:', error);
-            
             // Fallback to mock data
             return this.generateMockRelatedWork();
         }
+
+        // try {
+        //     // Call related work API
+        //     const response = await fetch(`${this.apiBaseUrl}/related-work`, {
+        //         method: 'POST',
+        //         headers: {
+        //             'Content-Type': 'application/json',
+        //             'Authorization': await this.getApiAuthToken()
+        //         },
+        //         body: JSON.stringify({
+        //             interests: userInterests,
+        //             limit: 10,
+        //             time_range: '30d',
+        //             venues: ['arxiv', 'acl', 'nips', 'icml', 'iclr']
+        //         })
+        //     });
+        //
+        //     if (!response.ok) {
+        //         throw new Error(`Related work API request failed: ${response.status}`);
+        //     }
+        //
+        //     const result = await response.json();
+        //     return result.papers;
+        //
+        // } catch (error) {
+        //     console.error('Related work API error:', error);
+        //
+        //     // Fallback to mock data
+        //     return this.generateMockRelatedWork();
+        // }
     }
 
     /**

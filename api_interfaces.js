@@ -3,6 +3,9 @@
  * This file contains all the API interface definitions and mock implementations
  * Replace mock implementations with actual AWS API calls
  */
+const {DocumentProcessorServiceClient} = require('@google-cloud/documentai').v1;
+const {LanguageServiceClient} = require('@google-cloud/language').v2;
+const {VertexAI} = require('@google-cloud/vertexai');
 
 class LiteratureAPI {
     constructor(config = {}) {
@@ -97,6 +100,35 @@ class LiteratureAPI {
             }
         };
 
+            const keywords = (data.papers || []).map(p => p.keywords);
+
+            if (!keywords) {
+              alert("No keywords found from saved papers.");
+              return;
+            }
+            const search_query = encodeURIComponent(keywords.join("+OR+"));
+            try {
+              const now = new Date().toISOString().split("T")[0];
+              const one_week_ago = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+              const url = `https://export.arxiv.org/api/query?search_query=all:${search_query}&sortBy=submittedDate&sortOrder=descending&max_results=5&submittedDate:[${one_week_ago}+TO+${now}]`;
+              const xml = await fetch(url).then(r => r.text());
+              const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+
+              const entries = Array.from(doc.getElementsByTagName("entry")).map(e => {
+                const publishedEl = e.getElementsByTagName("published")[0];
+                return {
+                  title: e.getElementsByTagName("title")[0].textContent.trim(),
+                  link: e.getElementsByTagName("id")[0].textContent.trim(),
+                  published: publishedEl ? publishedEl.textContent.split("T")[0] : ""
+                };
+              });
+              displaySuggestions(entries);
+            } catch (err) {
+              console.error("Suggestion fetch failed", err);
+            }
+          });
+        };
         try {
             const response = await this.makeRequest('POST', endpoint, requestBody);
             return this.formatRelatedWorkResponse(response);
@@ -354,6 +386,265 @@ class LiteratureAPI {
     }
 }
 
+class GcpLiteratureAPI extends LiteratureAPI {
+    constructor(config = {}) {
+        super(config);
+
+        this.projectId = config.projectId;
+        this.location = config.location || 'us';
+        this.processorId = config.processorId;
+        this.processorVersion = config.processorVersion;
+        this.languageHint = config.languageHint || 'en';
+        this.summaryLength = config.summaryLength || 'MEDIUM';
+        this.vertexLocation = config.vertexLocation || this.location;
+        this.embeddingModel = config.embeddingModel || 'textembedding-gecko@003';
+
+        if (!this.projectId) {
+            throw new Error('projectId is not set.');
+        }
+
+        if (!this.processorId) {
+            throw new Error('processorId is not set.');
+        }
+
+        this.documentClient = new DocumentProcessorServiceClient(config.documentClientOptions || {});
+        this.languageClient = new LanguageServiceClient(config.languageClientOptions || {});
+        this.vertexAI = new VertexAI({
+            project: this.projectId,
+            location: this.vertexLocation,
+            ...config.vertexClientOptions
+        });
+        this.vertexEmbeddingModel = this.vertexAI.getTextEmbeddingModel(this.embeddingModel);
+    }
+
+    async analyzeDocument(fileData, fileName, options = {}) {
+        const startTime = Date.now();
+
+        try {
+            const processedDocument = await this.processDocumentAI(fileData, options.mimeType || 'application/pdf');
+            const extractedText = processedDocument.text || '';
+            const metadata = this.extractMetadata(processedDocument, {
+                fileName,
+                languageHint: options.language || this.languageHint
+            });
+
+            if (!extractedText) {
+                throw new Error('Failed to extract text from Document AI.');
+            }
+
+            const [summary, keywords] = await Promise.all([
+                this.generateSummary(extractedText, options.summaryOptions || {}),
+                this.extractKeywords(extractedText, options.keywordOptions || {})
+            ]);
+
+            const embeddings = await this.generateEmbeddings(extractedText, options.embeddingOptions || {});
+
+            const processingTime = (Date.now() - startTime) / 1000;
+
+            return {
+                title: metadata.title || fileName.replace(/\.pdf$/i, ''),
+                authors: metadata.authors,
+                abstract: metadata.abstract,
+                keywords,
+                summary,
+                findings: metadata.findings,
+                confidence_score: metadata.confidence,
+                metadata: {
+                    page_count: metadata.pageCount,
+                    word_count: metadata.wordCount,
+                    language: metadata.language,
+                    document_type: metadata.documentType,
+                    references: metadata.references
+                },
+                processing_info: {
+                    processed_date: new Date().toISOString(),
+                    processing_time: processingTime,
+                    api_version: processedDocument.revisionReference?.latestProcessorVersion || 'documentai_v1'
+                },
+                embeddings
+            };
+        } catch (error) {
+            console.error('GCP Document analysis error:', error);
+            throw new Error(`GCP document analysis failed: ${error.message}`);
+        }
+    }
+
+    async processDocumentAI(fileData, mimeType = 'application/pdf') {
+        const nameParts = [
+            'projects', this.projectId,
+            'locations', this.location,
+            'processors', this.processorId
+        ];
+
+        if (this.processorVersion) {
+            nameParts.push('processorVersions', this.processorVersion);
+        }
+
+        const name = nameParts.join('/');
+
+        const contentBuffer = Buffer.isBuffer(fileData)
+            ? fileData
+            : Buffer.from(fileData, this.isBase64(fileData) ? 'base64' : undefined);
+
+        const request = {
+            name,
+            rawDocument: {
+                content: contentBuffer,
+                mimeType
+            }
+        };
+
+        const [result] = await this.documentClient.processDocument(request);
+        return result.document || result;
+    }
+
+    async generateSummary(text, summaryOptions = {}) {
+        const request = {
+            document: {
+                content: text,
+                type: 'PLAIN_TEXT'
+            },
+            encodingType: 'UTF8',
+            summaryConfig: {
+                context: summaryOptions.context || '',
+                summaryLength: summaryOptions.summaryLength || this.summaryLength
+            }
+        };
+
+        try {
+            const [response] = await this.languageClient.summarizeText(request);
+            const summaries = response?.summaryResults?.flatMap(result => result.summaries || []) || [];
+
+            if (summaries.length === 0) {
+                return '';
+            }
+
+            return summaries
+                .map(item => item.text?.trim())
+                .filter(Boolean)
+                .join('\n');
+        } catch (error) {
+            console.warn('The Natural Language API summarizeText call failed.', error);
+            return '';
+        }
+    }
+
+    async extractKeywords(text, keywordOptions = {}) {
+        const request = {
+            document: {
+                content: text,
+                type: 'PLAIN_TEXT'
+            },
+            encodingType: 'UTF8'
+        };
+
+        try {
+            const [response] = await this.languageClient.analyzeEntities(request);
+            const threshold = keywordOptions.salienceThreshold ?? 0.01;
+
+            return (response.entities || [])
+                .filter(entity => (entity.salience ?? 0) >= threshold)
+                .map(entity => entity.name)
+                .filter((value, index, self) => value && self.indexOf(value) === index);
+        } catch (error) {
+            console.warn('The call to the Natural Language API analyzeEntities failed.', error);
+            return [];
+        }
+    }
+
+    async generateEmbeddings(text, embeddingOptions = {}) {
+        const input = embeddingOptions.inputText || text;
+        if (!input) {
+            return [];
+        }
+
+        try {
+            const embeddingResponse = await this.vertexEmbeddingModel.getEmbeddings([input]);
+            const [first] = embeddingResponse || [];
+            return first?.values || [];
+        } catch (error) {
+            console.warn('Vertex AI embedding generation failed.', error);
+            return [];
+        }
+    }
+
+    extractMetadata(document, options = {}) {
+        const metadata = {
+            title: '',
+            authors: [],
+            abstract: '',
+            findings: [],
+            confidence: document.confidence ?? 0,
+            pageCount: Array.isArray(document.pages) ? document.pages.length : 0,
+            wordCount: 0,
+            language: options.languageHint || this.languageHint,
+            documentType: document.documentType || 'academic_paper',
+            references: []
+        };
+
+        const text = document.text || '';
+        metadata.wordCount = text ? text.split(/\s+/).filter(Boolean).length : 0;
+
+        if (Array.isArray(document.entities)) {
+            document.entities.forEach(entity => {
+                const type = entity.type?.toLowerCase();
+                const value = entity.mentionText || entity.normalizedValue?.text;
+                if (!value) {
+                    return;
+                }
+
+                switch (type) {
+                case 'title':
+                    metadata.title = metadata.title || value;
+                    break;
+                case 'author':
+                case 'authors':
+                    metadata.authors.push(value);
+                    break;
+                case 'abstract':
+                    metadata.abstract = metadata.abstract || value;
+                    break;
+                case 'finding':
+                case 'conclusion':
+                    metadata.findings.push(value);
+                    break;
+                case 'reference':
+                    metadata.references.push({
+                        text: value,
+                        confidence: entity.confidence
+                    });
+                    break;
+                case 'language':
+                    metadata.language = value;
+                    break;
+                case 'doc_type':
+                    metadata.documentType = value;
+                    break;
+                default:
+                    break;
+                }
+            });
+        }
+
+        metadata.authors = metadata.authors.length > 0 ? metadata.authors : (document.authors || []);
+
+        if (!metadata.abstract && text) {
+            metadata.abstract = text.split('\n').slice(0, 3).join('\n');
+        }
+
+        return metadata;
+    }
+
+    isBase64(value) {
+        if (typeof value !== 'string') {
+            return false;
+        }
+
+        const base64Regex = /^(?:[A-Za-z0-9+\/]{4})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/;
+        return base64Regex.test(value.replace(/\s+/g, ''));
+    }
+}
+
 /**
  * Mock API Implementation for Testing
  * Use this when AWS API is not available
@@ -491,8 +782,9 @@ class MockLiteratureAPI extends LiteratureAPI {
 
 // Export API classes
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { LiteratureAPI, MockLiteratureAPI };
+    module.exports = { LiteratureAPI, GcpLiteratureAPI, MockLiteratureAPI };
 } else {
     window.LiteratureAPI = LiteratureAPI;
+    window.GcpLiteratureAPI = GcpLiteratureAPI;
     window.MockLiteratureAPI = MockLiteratureAPI;
 }
