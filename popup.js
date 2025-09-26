@@ -58,6 +58,14 @@ class LiteratureManager {
 
         // Related work functionality
         this.setupRelatedWorkListeners();
+
+        chrome.runtime.onMessage.addListener((msg) => {
+            if (msg.type === "ARXIV_XML") {
+                console.log("popup.js recieved XML:", msg.xml);
+                const doc = new DOMParser().parseFromString(xml, "application/xml");
+            }
+        });
+
     }
 
     /**
@@ -258,7 +266,6 @@ class LiteratureManager {
 
                 // Send to AWS API for analysis
                 const analysisResults = await this.analyzeDocument(fileData, file);
-                alert('Analysis Results: ' + JSON.stringify(analysisResults));
 
                 // Store the processed paper
                 await this.storePaper(analysisResults, file);
@@ -331,30 +338,7 @@ class LiteratureManager {
             return response.data;
         } catch (error) {
             console.error('API Error:', error);
-            // Fallback: create mock analysis result
-            // return this.createMockAnalysis(fileName);
         }
-    }
-
-    /**
-     * Create mock analysis result for testing
-     */
-    createMockAnalysis(fileName) {
-        return {
-            id: Date.now().toString(),
-            title: fileName.replace('.pdf', ''),
-            authors: ['Author, A.', 'Researcher, B.'],
-            abstract: 'This is a mock abstract for testing purposes. The actual abstract would be extracted from the PDF using AWS services.',
-            keywords: ['machine learning', 'artificial intelligence', 'research'],
-            summary: 'Mock summary of the paper content.',
-            findings: [
-                'Key finding 1',
-                'Key finding 2',
-                'Key finding 3'
-            ],
-            confidence_score: 0.85,
-            upload_date: new Date().toISOString()
-        };
     }
 
     /**
@@ -390,9 +374,13 @@ class LiteratureManager {
         try {
             console.log('Performing clustering analysis...');
 
-            // TODO: Implement actual clustering algorithm
-            // For now, create mock clusters
-            this.currentClusters = await this.createMockClusters();
+            const payload = {
+                fileData,
+            };
+            this.currentClusters = await chrome.runtime.sendMessage({
+                type: 'PERFORM_CLUSTERING',
+                data: payload
+            });
 
             // Save clusters
             await chrome.storage.local.set({
@@ -407,32 +395,6 @@ class LiteratureManager {
         } catch (error) {
             console.error('Clustering error:', error);
         }
-    }
-
-    /**
-     * Create mock clusters for testing
-     */
-    async createMockClusters() {
-        const clusters = [
-            {
-                id: 'cluster_1',
-                name: 'Machine Learning',
-                description: 'Papers related to machine learning algorithms and applications',
-                color: '#FF6B6B',
-                papers: this.currentPapers.slice(0, Math.ceil(this.currentPapers.length / 2)),
-                keywords: ['machine learning', 'neural networks', 'deep learning']
-            },
-            {
-                id: 'cluster_2',
-                name: 'Natural Language Processing',
-                description: 'Papers focused on NLP and text analysis',
-                color: '#4ECDC4',
-                papers: this.currentPapers.slice(Math.ceil(this.currentPapers.length / 2)),
-                keywords: ['nlp', 'text analysis', 'language models']
-            }
-        ];
-
-        return clusters.filter(cluster => cluster.papers.length > 0);
     }
 
     /**
@@ -726,50 +688,31 @@ class LiteratureManager {
         relatedList.innerHTML = '<div style="text-align: center; color: #666;">Fetching related papers...</div>';
 
         try {
-            // TODO: Implement actual API call to fetch related papers
-            // For now, create mock related papers
-            const relatedPapers = await this.createMockRelatedPapers();
+            const data = await new Promise(resolve => chrome.storage.local.get(["papers"], resolve));
+            // const titles = (data.papers || []).map(p => p.title);
+            const keywords = (data.papers || []).filter(p => Array.isArray(p.keywords) && p.keywords.length > 0).flatMap(p => p.keywords);
+            const response = await chrome.runtime.sendMessage({
+                type: 'FETCH_RELATED_WORK',
+                data: keywords  // list[string]
+            });
 
+            if (!response?.success) {
+                throw new Error(response?.error || 'Background analysis failed');
+            }
+
+            const relatedPapers = response.data || [];
             relatedList.innerHTML = relatedPapers.map(paper => `
-                <div class="related-item" onclick="window.literatureManager.showRelatedPaperDetail('${paper.id}')">
-                    <div class="related-title">${paper.title}</div>
-                    <div class="related-reason">Related to: ${paper.relatedTo}</div>
-                    <div style="font-size: 12px; color: #999; margin-top: 5px;">
-                        ${paper.authors.join(', ')} • ${paper.venue}
-                    </div>
-                </div>
+                <a href="${paper.url}" target="_blank" class="related-item">
+                  <div class="related-title">${paper.title}</div>
+                  <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                    ${paper.authors.join(', ')} • ${paper.venue}
+                  </div>
+                </a>
             `).join('');
-
         } catch (error) {
             console.error('Error fetching related work:', error);
             relatedList.innerHTML = '<div style="text-align: center; color: red;">Error fetching related papers</div>';
         }
-    }
-
-    /**
-     * Create mock related papers for testing
-     */
-    async createMockRelatedPapers() {
-        return [
-            {
-                id: 'related_1',
-                title: 'Recent Advances in Neural Language Models',
-                authors: ['Smith, J.', 'Johnson, K.'],
-                venue: 'AAAI 2024',
-                relatedTo: 'Your NLP research cluster',
-                abstract: 'This paper presents recent advances...',
-                url: 'https://example.com/paper1'
-            },
-            {
-                id: 'related_2',
-                title: 'Deep Learning Applications in Computer Vision',
-                authors: ['Brown, L.', 'Davis, M.'],
-                venue: 'ICCV 2024',
-                relatedTo: 'Your Computer Vision interests',
-                abstract: 'We explore deep learning applications...',
-                url: 'https://example.com/paper2'
-            }
-        ];
     }
 
     /**

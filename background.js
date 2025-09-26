@@ -147,10 +147,11 @@ class BackgroundService {
                     sendResponse({ success: true, data: analysisResult });
                     break;
                 }
-                case 'PERFORM_CLUSTERING':
+                case 'PERFORM_CLUSTERING':{
                     const clusterResult = await this.performClustering(message.data);
                     sendResponse({ success: true, data: clusterResult });
                     break;
+                }
 
                 case 'FETCH_RELATED_WORK':
                     const relatedWork = await this.fetchRelatedWork(message.data);
@@ -199,15 +200,6 @@ class BackgroundService {
     }
 
     /**
-     * Get API authentication token
-     */
-    async getApiAuthToken() {
-        // TODO: Implement proper authentication
-        // This could involve OAuth, API keys, or other auth methods
-        return 'Bearer YOUR_API_TOKEN';
-    }
-
-    /**
      * Analyze document using AWS API
      */
     async analyzeDocument(documentData) {
@@ -219,12 +211,22 @@ class BackgroundService {
         try {
             console.log('Starting document analysis...');
 
-            const apiResult = await sendPdfToPython(
-                documentData.fileData,
-                documentData.fileName,
-            );
+            const response = await fetch("http://127.0.0.1:5000/analyze", {
+                method: 'POST',
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    filename: documentData.fileName,
+                    data: documentData.fileData,
+                    file_type: documentData.fileType
+                })
+            });
 
-            console.log('Document analysis completed');
+            if (!response.ok) {
+                throw new Error(`Clustering API request failed: ${response.status}`);
+            }
+            console.log('Document analysis completed: ', response.status);
+
+            const apiResult = await response.json();
             return {
                 id: this.generateUniqueId(),
                 ...apiResult,
@@ -241,20 +243,6 @@ class BackgroundService {
         }
     }
 
-    async function sendPdfToPython(fileData, fileName) {
-        const response = await fetch("http://127.0.0.1:5000/analyze", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: {
-                filename: fileName,
-                data: fileData
-            }
-        });
-
-        const result = await response.json();
-        console.log("API result:", result);
-    }
-
     /**
      * Perform clustering analysis
      */
@@ -267,7 +255,6 @@ class BackgroundService {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': await this.getApiAuthToken()
                 },
                 body: JSON.stringify({
                     papers: papers.map(paper => ({
@@ -383,28 +370,41 @@ class BackgroundService {
         console.log('Fetching related work...');
 
         try {
-            // Call related work API
-            const response = await fetch(`${this.apiBaseUrl}/related-work`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.getApiAuthToken()
-                },
-                body: JSON.stringify({
-                    interests: userInterests,
-                    limit: 10,
-                    time_range: '30d',
-                    venues: ['arxiv', 'acl', 'nips', 'icml', 'iclr']
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Related work API request failed: ${response.status}`);
+            if (!userInterests || userInterests.length === 0) {
+                alert("No keywords found from saved papers.");
+                return;
             }
 
-            const result = await response.json();
-            return result.papers;
+            const search_query = encodeURIComponent(userInterests.join("+OR+"));
 
+            const now = new Date().toISOString().split("T")[0];
+            const one_week_ago = new Date(
+                Date.now() - 7 * 24 * 60 * 60 * 1000
+            ).toISOString().split("T")[0];
+
+            const url = `https://export.arxiv.org/api/query?search_query=all:${search_query}&sortBy=submittedDate&sortOrder=descending&max_results=5&submittedDate:[${one_week_ago}+TO+${now}]`;
+            const xml = await fetch(url).then(r => r.text());
+            // const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+            // const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            // if (!tab?.id) return;
+            chrome.tabs.sendMessage(tab.id, { type: "ARXIV_XML", xml });
+
+            const entries = Array.from(doc.getElementsByTagName("entry"));
+            const relatedPapers = entries.map((e, idx) => {
+                const title = e.getElementsByTagName("title")[0]?.textContent?.trim() || "Untitled";
+                const authors = Array.from(e.getElementsByTagName("author")).map(a => a.getElementsByTagName("name")[0]?.textContent?.trim()).filter(Boolean);
+                const idLink = e.getElementsByTagName("id")[0]?.textContent?.trim();
+
+                const journalRef = e.getElementsByTagNameNS(nsArxiv, "journal_ref")[0]?.textContent?.trim();
+                const primaryCat = Array.from(e.getElementsByTagName("category"))[0]?.getAttribute("term");
+                const venue = journalRef || (primaryCat ? `arXiv:${primaryCat}` : "arXiv");
+                // TODO: relatedTo, abstract
+                return { id, title, authors, venue, url };
+            });
+            console.log("relatedPapers", relatedPapers);
+
+            return relatedPapers;
         } catch (error) {
             console.error('Related work API error:', error);
 
