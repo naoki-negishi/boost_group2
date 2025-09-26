@@ -220,7 +220,6 @@ class BackgroundService {
                     file_type: documentData.fileType
                 })
             });
-
             if (!response.ok) {
                 throw new Error(`Clustering API request failed: ${response.status}`);
             }
@@ -246,40 +245,29 @@ class BackgroundService {
     /**
      * Perform clustering analysis
      */
-    async performClustering(papers) {
+    async performClustering(data) {
         console.log('Starting clustering analysis...');
 
         try {
-            // Call clustering API
-            const response = await fetch(`${this.apiBaseUrl}/cluster`, {
+            console.log('Starting clustring...');
+
+            const response = await fetch("http://127.0.0.1:5000/analyze", {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({
-                    papers: papers.map(paper => ({
-                        id: paper.id,
-                        title: paper.title,
-                        abstract: paper.abstract,
-                        keywords: paper.keywords,
-                        summary: paper.summary
-                    })),
-                    clustering_options: {
-                        algorithm: 'hierarchical',
-                        similarity_threshold: 0.7,
-                        max_clusters: 10,
-                        min_cluster_size: 2
-                    }
+                    papers: data.papers || [],
+                    options: data.options || {}
                 })
             });
-
             if (!response.ok) {
                 throw new Error(`Clustering API request failed: ${response.status}`);
             }
+            console.log('Clustering analysis completed: ', response.status);
 
             const result = await response.json();
-            return this.processClusteringResult(result, papers);
+            return result
 
+            // return this.processClusteringResult(result, papers);
         } catch (error) {
             console.error('Clustering API error:', error);
 
@@ -288,35 +276,35 @@ class BackgroundService {
         }
     }
 
-    /**
-     * Process clustering result from API
-     */
-    processClusteringResult(apiResult, papers) {
-        const clusters = apiResult.clusters.map((cluster, index) => ({
-            id: `cluster_${index + 1}`,
-            name: cluster.name || `Cluster ${index + 1}`,
-            description: cluster.description || 'Auto-generated cluster',
-            color: this.generateClusterColor(index),
-            papers: cluster.paper_ids.map(id => papers.find(p => p.id === id)).filter(Boolean),
-            keywords: cluster.representative_keywords || [],
-            similarity_score: cluster.cohesion_score || 0.8,
-            created_date: new Date().toISOString()
-        }));
-
-        return {
-            clusters: clusters,
-            algorithm_info: {
-                algorithm: apiResult.algorithm_used,
-                parameters: apiResult.parameters,
-                execution_time: apiResult.execution_time
-            },
-            quality_metrics: {
-                silhouette_score: apiResult.silhouette_score,
-                inertia: apiResult.inertia,
-                num_clusters: clusters.length
-            }
-        };
-    }
+    // /**
+    //  * Process clustering result from API
+    //  */
+    // processClusteringResult(apiResult, papers) {
+    //     const clusters = apiResult.clusters.map((cluster, index) => ({
+    //         id: `cluster_${index + 1}`,
+    //         name: cluster.name || `Cluster ${index + 1}`,
+    //         description: cluster.description || 'Auto-generated cluster',
+    //         color: this.generateClusterColor(index),
+    //         papers: cluster.paper_ids.map(id => papers.find(p => p.id === id)).filter(Boolean),
+    //         keywords: cluster.representative_keywords || [],
+    //         similarity_score: cluster.cohesion_score || 0.8,
+    //         created_date: new Date().toISOString()
+    //     }));
+    //
+    //     return {
+    //         clusters: clusters,
+    //         algorithm_info: {
+    //             algorithm: apiResult.algorithm_used,
+    //             parameters: apiResult.parameters,
+    //             execution_time: apiResult.execution_time
+    //         },
+    //         quality_metrics: {
+    //             silhouette_score: apiResult.silhouette_score,
+    //             inertia: apiResult.inertia,
+    //             num_clusters: clusters.length
+    //         }
+    //     };
+    // }
 
     /**
      * Perform simple local clustering as fallback
@@ -421,55 +409,6 @@ class BackgroundService {
                 citation_count: 30000
             }
         ];
-    }
-
-    /**
-     * Generate summary for papers
-     */
-    async generateSummary(papers) {
-        console.log('Generating summary...');
-
-        try {
-            // Call summary generation API
-            const response = await fetch(`${this.apiBaseUrl}/summarize`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': await this.getApiAuthToken()
-                },
-                body: JSON.stringify({
-                    papers: papers,
-                    summary_type: 'comprehensive',
-                    max_length: 500
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`Summary API request failed: ${response.status}`);
-            }
-
-            const result = await response.json();
-            return result.summary;
-
-        } catch (error) {
-            console.error('Summary generation error:', error);
-
-            // Fallback to simple summary
-            return this.generateLocalSummary(papers);
-        }
-    }
-
-    /**
-     * Generate local summary as fallback
-     */
-    generateLocalSummary(papers) {
-        if (papers.length === 0) return 'No papers to summarize.';
-
-        const totalPapers = papers.length;
-        const recentPaper = papers[papers.length - 1];
-        const allKeywords = [...new Set(papers.flatMap(p => p.keywords))];
-
-        return `You have ${totalPapers} papers in your library. The most recent addition is "${recentPaper.title}". Key research areas include: ${allKeywords.slice(0, 5).join(', ')}. Your collection covers diverse topics in ${allKeywords.length} different keyword areas.`;
     }
 
     /**

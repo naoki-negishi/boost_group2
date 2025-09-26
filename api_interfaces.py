@@ -9,11 +9,15 @@ import uuid
 from typing import Any, Dict, Iterable, List, Optional
 
 import google.generativeai as genai
+import hdbscan
+import matplotlib.pyplot as plt
 import requests
+import seaborn as sns
 from flask import Flask, jsonify, request
 from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
-from sklearn.cluster import KMeans
+from sklearn.manifold import TSNE
+from sklearn.preprocessing import normalize
 
 GOOGLE_DOCUMENT_AI_BASE_URL = "https://documentai.googleapis.com"
 GOOGLE_LANGUAGE_BASE_URL = "https://language.googleapis.com"
@@ -92,7 +96,7 @@ class GcpLiteratureAPI:
         self.vertex_location = vertex_location
         self.session = session or requests.Session()
 
-        self.gemini_pro = genai.GenerativeModel("models/gemini-2.5-flash")
+        self.gemini_pro = genai.GenerativeModel("models/gemini-2.5-flash-lite")
         self.embedding_model = SentenceTransformer(embedding_model_name)
 
         self.app_logger = app_logger or logging.getLogger(__name__)
@@ -138,34 +142,68 @@ class GcpLiteratureAPI:
             "data": pdf_bytes,
         }
 
-        try:
-            sum_prompt = "Summarize the main points of this PDF within 200 words."
-            response = self.gemini_pro.generate_content([pdf_data, sum_prompt])
-            summary = response.text if hasattr(response, "text") else ""
-            self.app_logger.info(f"Gemini response: {summary}")
-        except Exception as exc:  # pylint: disable=broad-except
-            self.app_logger.error(f"Gemini API call failed: {exc}")
+        # try:
+        #     sum_prompt = "Summarize the main points of this PDF within 200 words."
+        #     response = self.gemini_pro.generate_content([pdf_data, sum_prompt])
+        #     summary = response.text if hasattr(response, "text") else ""
+        #     self.app_logger.info(f"Gemini response: {summary}")
+        # except Exception as exc:  # pylint: disable=broad-except
+        #     self.app_logger.error(f"Gemini API call failed: {exc}")
 
         try:
-            abst_prompt = "Extract the exact abstract of the following paper."
-            abstract_response = self.gemini_pro.generate_content(
+            abst_prompt = """
+            You are an academic PDF information extractor. You will be given a single academic paper as input. 
+            Your task is to extract the following fields exactly as they appear in the document, without rewriting, summarizing, or guessing. 
+
+            Output strictly in JSON format with no additional text or explanation.
+
+            Format:
+            {
+              "title": string|null,            // The official paper title (do not use running headers or abbreviations)
+              "authors": string[]|null,        // List of author names exactly as written in the paper, in order
+              "abstract": string|null          // The abstract text exactly as written in the paper
+            }
+
+            Rules:
+            - Extract the exact text from the PDF. Do not paraphrase or summarize. 
+            - Preserve capitalization and punctuation.
+            - For the abstract, keep paragraph breaks but remove line-break hyphenations (e.g., "adapta-\ntion" → "adaptation").
+            - If a field is missing or cannot be found, return null.
+            - Respond with valid JSON only, no explanations or commentary.
+            """
+
+            response = self.gemini_pro.generate_content(
                 [pdf_data, abst_prompt]
             )
-            abstract = (
-                abstract_response.text if hasattr(abstract_response, "text") else ""
+            raw_text = (
+                response.text if hasattr(response, "text") else ""
             )
-            self.app_logger.info(f"Extracted abstract: \n{abstract}")
+            cleaned_raw_text = re.sub(
+                r"^```json\s*|\s*```$",
+                "",
+                raw_text.strip(),
+                flags=re.MULTILINE
+            )
+            self.app_logger.info(f"Gemini abstract response: {cleaned_raw_text}")
+            text = json.loads(cleaned_raw_text)
+            title = text.get("title")
+            authors = [text.get("authors")]
+            abstract = text.get("abstract")
+
+            self.app_logger.info(f"Extracted abstract: \n{text}")
         except Exception as exc:  # pylint: disable=broad-except
             self.app_logger.error(f"Gemini API call for abstract failed: {exc}")
 
         # generate keywords and embeddings
         try:
-            keyword_prompt = "Extract up to 3 concise keywords from the "\
-                "following text. Return them as a single line,"\
-                " comma-separated list only. For example: keyword1, keyword2,"\
+            keyword_prompt = (
+                "Extract up to 3 concise keywords from the "
+                "following text. Return them as a single line,"
+                " comma-separated list only. For example: keyword1, keyword2,"
                 " keyword3"
+            )
             keyword_response = self.gemini_pro.generate_content(
-                [summary, keyword_prompt]
+                [abstract, keyword_prompt]
             )
             raw = keyword_response.text.strip() if keyword_response.text else ""
             keywords = [kw.strip() for kw in re.split(r"[,;\n]", raw) if kw.strip()][:3]
@@ -173,17 +211,15 @@ class GcpLiteratureAPI:
         except Exception as exc:  # pylint: disable=broad-except
             self.app_logger.error(f"Gemini API call for keywords failed: {exc}")
 
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        self.app_logger.info(reader.metadata)
+        # reader = PdfReader(io.BytesIO(pdf_bytes))
+        # self.app_logger.info(reader.metadata)
 
         processing_time = time.time() - start_time
-
         return {
-            "title": reader.metadata.title if reader.metadata.title else filename,
-            "authors": [reader.metadata.author] if reader.metadata.author else [],
+            "title": title,
+            "authors": authors,
             "abstract": abstract,
             "keywords": keywords,
-            "summary": summary,
             "metadata": {},
             "processing_info": {
                 "processed_date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -193,46 +229,101 @@ class GcpLiteratureAPI:
         }
 
     def perform_clustering(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        k = 20  # とりあえず仮
-        km = KMeans(n_clusters=k, n_init="auto", random_state=0)
+        # body: JSON.stringify({
+        #     papers: papers.map(paper => ({
+        #       id: paper.id,
+        #       title: paper.title,
+        #       abstract: paper.abstract,
+        #       keywords: paper.keywords,
+        #       summary: paper.summary
+        #     })),
+        #     options: {
+        #         algorithm: 'kmeans',
+        #         similarity_threshold: 0.7,
+        #         maxClusters: 10,
+        #         minClusterSize: 2
+        #     }
+
+        papers_full = payload.get("papers") or []
+        papers = [
+            {
+                "id": paper["id"],
+                "title": paper["title"],
+                "abstract": paper["abstract"],
+                "keywords": paper["keywords"],
+                "summary": paper["summary"],
+            }
+            for paper in papers_full
+        ]
+        options = payload.get("options") or {}
+        assert options["algorithm"] in {"hdbscan"}
+
+        data = [
+            normalize(
+                self.embedding_model.encode(
+                    (paper.get("title") or "") + " " + (paper.get("abstract") or "")
+                ),
+                norm="l2",
+            )
+            for paper in papers
+        ]
+        self.app_logger.info(
+            f"Embedding data shape: {
+                             len(data)} x {len(data[0])}"
+        )
+
+        clusterer = hdbscan.HDBSCAN(
+            metric="euclidean",
+            gen_min_span_tree=True,
+            min_cluster_size=options["minClusterSize"],
+        )
+        clusterer.fit(data)
+
+        cluster_size = clusterer.labels_.max() + 1
+        color_palette = sns.color_palette("Paired", n_colors=cluster_size).as_hex()
+        cluster_colors = [
+            color_palette[x] if x >= 0 else (0.5, 0.5, 0.5) for x in clusterer.labels_
+        ]
+        cluster_member_colors = [
+            sns.desaturate(x, p)
+            for x, p in zip(cluster_colors, clusterer.probabilities_)
+        ]
+        projection = TSNE().fit_transform(data)
+        plt.scatter(
+            *projection.T, s=50, linewidth=0, c=cluster_member_colors, alpha=0.25
+        )
+
+        # km = KMeans(n_clusters=k, n_init="auto", random_state=0)
         # labels = km.fit_predict(emb)  # labels[i] がクラスタID
 
-        papers = payload.get("papers") or []
-        clusters: Dict[str, List[str]] = {}
-        for paper in papers:
-            keywords = paper.get("keywords") or []
-            main_keyword = keywords[0] if keywords else "general"
-            clusters.setdefault(main_keyword, []).append(paper.get("id"))
+        # clusters: Dict[str, List[str]] = {}
+        # for paper in papers:
+        #     keywords = paper.get("keywords") or []
+        #     main_keyword = keywords[0] if keywords else "general"
+        #     clusters.setdefault(main_keyword, []).append(paper.get("id"))
 
-        cluster_list = []
-        for index, (keyword, paper_ids) in enumerate(clusters.items()):
-            cluster_list.append(
+        clusters = []
+        for index, paper_ids in enumerate(clusters.items()):
+            paper_idx = 0
+
+            clusters.append(
                 {
                     "id": f"cluster_{index + 1}",
-                    "name": self._capitalize(keyword),
+                    "name": papers_full[paper_idx].get("title"),
                     "description": f"Papers related to {keyword} research",
-                    "color": self.generate_cluster_color(index),
-                    "papers": paper_ids,
+                    "color": cluster_member_colors[index],
+                    "papers": papers_full[paper_idx],
                     "keywords": [keyword],
-                    "similarity_score": 0.8,
-                    "size": len(paper_ids),
-                    "created_date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 }
             )
 
-        return {
-            "clusters": cluster_list,
-            "algorithm_info": {
-                "algorithm": "mock_keyword_clustering",
-                "parameters": {"similarity_threshold": 0.7},
-                "execution_time": 0.5,
-            },
-            "quality_metrics": {
-                "silhouette_score": 0.7,
-                "inertia": None,
-                "num_clusters": len(cluster_list),
-            },
-        }
+        # Save the plot image
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png")
+        buf.seek(0)
+        img_b64 = base64.b64encode(buf.read()).decode("utf-8")
+
+        return clusters, img_b64
 
     def generate_audio_summary(self, payload: Dict[str, Any]) -> str:
         text = payload.get("text", "")
@@ -370,28 +461,6 @@ class GcpLiteratureAPI:
             r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
         )
         return bool(pattern.match(stripped))
-
-    @staticmethod
-    def generate_cluster_color(index: int) -> str:
-        colors = [
-            "#FF6B6B",
-            "#4ECDC4",
-            "#45B7D1",
-            "#96CEB4",
-            "#FFEAA7",
-            "#DDA0DD",
-            "#98D8C8",
-            "#F7DC6F",
-            "#BB8FCE",
-            "#85C1E9",
-            "#F8C471",
-            "#82E0AA",
-        ]
-        return colors[index % len(colors)]
-
-    @staticmethod
-    def _capitalize(value: str) -> str:
-        return value[:1].upper() + value[1:] if value else "General"
 
     @staticmethod
     def _extract_document_id(document: Dict[str, Any]) -> str:

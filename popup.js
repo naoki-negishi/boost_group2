@@ -41,8 +41,20 @@ class LiteratureManager {
         document.getElementById('uploadBtn')?.addEventListener('click', () => this.showPopup('uploadPopup'));
         document.getElementById('clusterBtn')?.addEventListener('click', () => this.showPopup('clusterPopup'));
         document.getElementById('searchBtn')?.addEventListener('click', () => this.showPopup('searchPopup'));
-        document.getElementById('relatedBtn')?.addEventListener('click', () => this.showPopup('relatedPopup'));
-        document.getElementById('storageInfoBtn')?.addEventListener('click', () => this.showStorageInfo());
+        document.getElementById('relatedBtn')?.addEventListener(
+            'click',
+            () => {
+                this.showPopup('relatedPopup');
+                document.getElementById('fetchRelatedBtn')?.click();
+            }
+        );
+        document.getElementById('storageInfoBtn')?.addEventListener(
+            'click',
+            () => {
+                this.showPopup('storagePopup')
+                this.showStorageInfo();
+            }
+        );
 
         // Setup close buttons for all popups
         this.setupGlobalCloseListeners();
@@ -58,6 +70,9 @@ class LiteratureManager {
 
         // Related work functionality
         this.setupRelatedWorkListeners();
+
+        // Storage info functionality
+        this.setupStorageInfoListeners();
     }
 
     /**
@@ -221,11 +236,17 @@ class LiteratureManager {
      */
     setupRelatedWorkListeners() {
         const fetchRelatedBtn = document.getElementById('fetchRelatedBtn');
-        const configureInterestsBtn = document.getElementById('configureInterestsBtn');
+        // const configureInterestsBtn = document.getElementById('configureInterestsBtn');
 
         fetchRelatedBtn.addEventListener('click', () => this.fetchRelatedWork());
-        configureInterestsBtn.addEventListener('click', () => this.configureInterests());
+        // configureInterestsBtn.addEventListener('click', () => this.configureInterests());
     }
+
+    setupStorageInfoListeners() {
+        const clearStorageBtn = document.getElementById('clearStorageBtn');
+        clearStorageBtn.addEventListener('click', () => this.clearStorage());
+    }
+
 
     /**
      * Handle file upload and processing
@@ -261,6 +282,8 @@ class LiteratureManager {
 
                 // Store the processed paper
                 await this.storePaper(analysisResults, file);
+                // TODO: show paper detail after upload
+                // this.showPaperDetail(response.data.id);
 
                 // Update UI
                 this.updateStatusPanel();
@@ -367,12 +390,22 @@ class LiteratureManager {
             console.log('Performing clustering analysis...');
 
             const payload = {
-                fileData,
+                papers: this.currentPapers,
+                options: {
+                    algorithm: 'hdbscan',
+                    similarity_threshold: 0.7,
+                    maxClusters: 10,
+                    minClusterSize: 2
+                }
             };
-            this.currentClusters = await chrome.runtime.sendMessage({
+            this.culustringResult = await chrome.runtime.sendMessage({
                 type: 'PERFORM_CLUSTERING',
                 data: payload
             });
+            console.log('Clustering result:', this.culustringResult);
+            this.currentClusters = this.culustringResult?.data?.clusters || [];
+            this.clusterImage = this.culustringResult?.data?.img_b64 || null;
+            document.getElementById("plot").src = "data:image/png;base64," + img_b64;
 
             // Save clusters
             await chrome.storage.local.set({
@@ -624,7 +657,7 @@ class LiteratureManager {
             authors: paper.authors,
             abstract: paper.abstract,
             keywords: paper.keywords,
-            summary: paper.summary,
+            // summary: paper.summary,
             findings: paper.findings
         };
 
@@ -891,6 +924,8 @@ class LiteratureManager {
      * Show storage information
      */
     async showStorageInfo() {
+        const basicInfo = document.getElementById('basicInfo');
+        const storageInfo = document.getElementById('storageInfo');
         try {
             const result = await chrome.storage.local.get(null);
             const dataSize = JSON.stringify(result).length;
@@ -907,7 +942,16 @@ class LiteratureManager {
                   : "Never"
               }`
             ];
-            alert(lines.join("\n"));
+            basicInfo.textContent = lines.join("\n")
+
+            storageInfo.innerHTML = this.currentPapers.map(paper => `
+                <div class="related-title">
+                  ${paper.title}
+                  <div style="font-size: 12px; color: #999; margin-top: 5px;">
+                    ${paper.authors.join(', ')}
+                  </div>
+                </div>
+            `).join('');
         } catch (error) {
             console.error('Error getting storage info:', error);
         }
@@ -951,6 +995,21 @@ class LiteratureManager {
         } else {
             console.error('Cannot close popup, not found:', popupId);
         }
+    }
+
+    clearStorage() {
+        if (!confirm('Are you sure you want to clear all stored data? This action cannot be undone.')) return;
+
+        chrome.storage.local.clear().then(() => {
+            this.currentPapers = [];
+            this.currentClusters = [];
+            this.updateStatusPanel();
+            this.updateClustersPreview();
+            alert('All stored data has been cleared.');
+        }).catch(error => {
+            console.error('Error clearing storage:', error);
+            alert('Error clearing storage. See console for details.');
+        });
     }
 }
 

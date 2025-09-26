@@ -18,9 +18,9 @@
         <button class="btn" id="clusterBtn">
             🔗 Cluster
         </button>
-        <button class="btn" id="searchBtn">
-            🔍 Search
-        </button>
+        <!-- <button class="btn" id="searchBtn"> -->
+        <!--     🔍 Search -->
+        <!-- </button> -->
         <button class="btn" id="relatedBtn">
             🌐 Daily Related Work
         </button>
@@ -153,12 +153,28 @@
                 <p style="color: #666; font-size: 14px; margin-bottom: 10px;">
                     Discover new papers related to your research interests
                 </p>
-                <button class="upload-btn" id="fetchRelatedBtn">🔄 Fetch Latest Papers</button>
-                <button class="upload-btn" id="configureInterestsBtn" style="margin-left: 10px;">⚙️ Configure Interests</button>
+                <button class="upload-btn" id="fetchRelatedBtn" style="display:none;">🔄 Fetch Latest Papers</button>
+                <!-- <button class="upload-btn" id="configureInterestsBtn" style="margin-left: 10px;">⚙️ Configure Interests</button> -->
             </div>
 
             <div class="related-list" id="relatedList">
                 <!-- Dynamically generated related literature list -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Storage Popup -->
+    <div class="popup-overlay" id="storagePopup">
+        <div class="popup-content">
+            <div class="popup-header">
+                <h2>💾 Storage Info</h2>
+                <button class="clear-btn" type="button" id="clearStorageBtn">Clear ALL Storage</button>
+                <button class="close-btn" data-close="storagePopup">&times;</button>
+            </div>
+            <div class="popup-header" id="basicInfo"></div>
+
+            <div class="storage-info" id="storageInfo">
+                <!-- Storage information will be dynamically loaded here -->
             </div>
         </div>
     </div>
