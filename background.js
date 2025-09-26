@@ -375,7 +375,8 @@ class BackgroundService {
                 return;
             }
 
-            const search_query = encodeURIComponent(userInterests.join("+OR+"));
+            const search_query = encodeURIComponent(userInterests[0]);
+            // const search_query = encodeURIComponent(userInterests.join("+OR+"));
 
             const now = new Date().toISOString().split("T")[0];
             const one_week_ago = new Date(
@@ -384,32 +385,9 @@ class BackgroundService {
 
             const url = `https://export.arxiv.org/api/query?search_query=all:${search_query}&sortBy=submittedDate&sortOrder=descending&max_results=5&submittedDate:[${one_week_ago}+TO+${now}]`;
             const xml = await fetch(url).then(r => r.text());
-            // const doc = new DOMParser().parseFromString(xml, "application/xml");
-
-            // const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            // if (!tab?.id) return;
-            chrome.tabs.sendMessage(tab.id, { type: "ARXIV_XML", xml });
-
-            const entries = Array.from(doc.getElementsByTagName("entry"));
-            const relatedPapers = entries.map((e, idx) => {
-                const title = e.getElementsByTagName("title")[0]?.textContent?.trim() || "Untitled";
-                const authors = Array.from(e.getElementsByTagName("author")).map(a => a.getElementsByTagName("name")[0]?.textContent?.trim()).filter(Boolean);
-                const idLink = e.getElementsByTagName("id")[0]?.textContent?.trim();
-
-                const journalRef = e.getElementsByTagNameNS(nsArxiv, "journal_ref")[0]?.textContent?.trim();
-                const primaryCat = Array.from(e.getElementsByTagName("category"))[0]?.getAttribute("term");
-                const venue = journalRef || (primaryCat ? `arXiv:${primaryCat}` : "arXiv");
-                // TODO: relatedTo, abstract
-                return { id, title, authors, venue, url };
-            });
-            console.log("relatedPapers", relatedPapers);
-
-            return relatedPapers;
+            return xml
         } catch (error) {
             console.error('Related work API error:', error);
-
-            // Fallback to mock data
-            return this.generateMockRelatedWork();
         }
     }
 

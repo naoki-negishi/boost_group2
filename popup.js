@@ -58,14 +58,6 @@ class LiteratureManager {
 
         // Related work functionality
         this.setupRelatedWorkListeners();
-
-        chrome.runtime.onMessage.addListener((msg) => {
-            if (msg.type === "ARXIV_XML") {
-                console.log("popup.js recieved XML:", msg.xml);
-                const doc = new DOMParser().parseFromString(xml, "application/xml");
-            }
-        });
-
     }
 
     /**
@@ -689,7 +681,6 @@ class LiteratureManager {
 
         try {
             const data = await new Promise(resolve => chrome.storage.local.get(["papers"], resolve));
-            // const titles = (data.papers || []).map(p => p.title);
             const keywords = (data.papers || []).filter(p => Array.isArray(p.keywords) && p.keywords.length > 0).flatMap(p => p.keywords);
             const response = await chrome.runtime.sendMessage({
                 type: 'FETCH_RELATED_WORK',
@@ -700,7 +691,23 @@ class LiteratureManager {
                 throw new Error(response?.error || 'Background analysis failed');
             }
 
-            const relatedPapers = response.data || [];
+            const xml = response.data;
+            const doc = new DOMParser().parseFromString(xml, "application/xml");
+
+            const entries = Array.from(doc.getElementsByTagName("entry"));
+            const relatedPapers = entries.map(e => {
+                const title = e.getElementsByTagName("title")[0]?.textContent?.trim() || "Untitled";
+                const authors = Array.from(e.getElementsByTagName("author")).map(a => a.getElementsByTagName("name")[0]?.textContent?.trim()).filter(Boolean);
+                const url = e.getElementsByTagName("id")[0]?.textContent?.trim() ?? "";
+
+                const publishedEl = e.getElementsByTagName("published")[0];
+                const venue = publishedEl ? publishedEl.textContent.split("T")[0] : ""
+                // TODO: relatedTo, abstract
+                return { title, authors, venue, url };
+            });
+            console.log("relatedPapers", relatedPapers);
+
+            // const relatedPapers = response.data || [];
             relatedList.innerHTML = relatedPapers.map(paper => `
                 <a href="${paper.url}" target="_blank" class="related-item">
                   <div class="related-title">${paper.title}</div>
