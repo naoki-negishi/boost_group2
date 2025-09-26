@@ -132,6 +132,7 @@ class GcpLiteratureAPI:
         if payload.get("data"):
             pdf_bytes = base64.b64decode(payload.get("data"))
         else:
+            self.app_logger.info(f"Fetching document from URL: {payload.get('url')}")
             return {"ok": False, "error": "No content provided"}
         mime_type = payload.get("file_type", "application/pdf")
         # options = payload.get("options") or {}
@@ -142,13 +143,13 @@ class GcpLiteratureAPI:
             "data": pdf_bytes,
         }
 
-        # try:
-        #     sum_prompt = "Summarize the main points of this PDF within 200 words."
-        #     response = self.gemini_pro.generate_content([pdf_data, sum_prompt])
-        #     summary = response.text if hasattr(response, "text") else ""
-        #     self.app_logger.info(f"Gemini response: {summary}")
-        # except Exception as exc:  # pylint: disable=broad-except
-        #     self.app_logger.error(f"Gemini API call failed: {exc}")
+        try:
+            sum_prompt = "Summarize the main points of this PDF within 200 words."
+            response = self.gemini_pro.generate_content([pdf_data, sum_prompt])
+            summary = response.text if hasattr(response, "text") else ""
+            self.app_logger.info(f"Gemini response: {summary}")
+        except Exception as exc:  # pylint: disable=broad-except
+            self.app_logger.error(f"Gemini API call failed: {exc}")
 
         try:
             abst_prompt = """
@@ -220,6 +221,7 @@ class GcpLiteratureAPI:
             "authors": authors,
             "abstract": abstract,
             "keywords": keywords,
+            "summary": summary,
             "metadata": {},
             "processing_info": {
                 "processed_date": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -245,41 +247,57 @@ class GcpLiteratureAPI:
         #     }
 
         papers_full = payload.get("papers") or []
-        papers = [
-            {
-                "id": paper["id"],
-                "title": paper["title"],
-                "abstract": paper["abstract"],
-                "keywords": paper["keywords"],
-                "summary": paper["summary"],
-            }
-            for paper in papers_full
-        ]
+        self.app_logger.info(papers_full[0].keys())
+        self.app_logger.info(f"length {len(papers_full)}")
+        papers = []
+        for paper in papers_full:
+            content = {}
+            if paper.get("id"):
+                content["id"] = paper["id"]
+            else:
+                continue
+            if paper.get("title"):
+                content["title"] = paper["title"]
+            else:
+                continue
+            if paper.get("abstract"):
+                content["abstract"] = paper["abstract"]
+            else:
+                continue
+            if paper.get("keywords"):
+                content["keywords"] = paper["keywords"]
+            else:
+                continue
+            # if paper.get("summary"):
+            #     content["summary"] = paper["summary"]
+            papers.append(content)
+        self.app_logger.info(f"Filtered length {len(papers)}")
         options = payload.get("options") or {}
         assert options["algorithm"] in {"hdbscan"}
 
-        data = [
-            normalize(
-                self.embedding_model.encode(
-                    (paper.get("title") or "") + " " + (paper.get("abstract") or "")
-                ),
-                norm="l2",
-            )
-            for paper in papers
-        ]
-        self.app_logger.info(
-            f"Embedding data shape: {
-                             len(data)} x {len(data[0])}"
-        )
+        data = []
+        for paper in papers:
+            feature_text = (paper.get("title") or "") + " " + (paper.get("abstract") or "")
+            emb = self.embedding_model.encode(feature_text)
+            normalized_emb = normalize([emb,], norm="l2")
+            data.append(normalized_emb[0])
+        self.app_logger.info(f"data shape: {len(data)} x {len(data[0])}")
 
+        self.app_logger.info("Clustering papers...")
+        self.app_logger.info(f"Clustering options: {options}")
         clusterer = hdbscan.HDBSCAN(
             metric="euclidean",
             gen_min_span_tree=True,
+            cluster_selection_method='leaf',
             min_cluster_size=options["minClusterSize"],
+            min_samples=options["minSamples"]
         )
         clusterer.fit(data)
 
+        self.app_logger.info(f"Found {clusterer.labels_} clusters")
         cluster_size = clusterer.labels_.max() + 1
+        if cluster_size < 1:
+            return {"clusters": [], "image": ""}
         color_palette = sns.color_palette("Paired", n_colors=cluster_size).as_hex()
         cluster_colors = [
             color_palette[x] if x >= 0 else (0.5, 0.5, 0.5) for x in clusterer.labels_
@@ -292,15 +310,6 @@ class GcpLiteratureAPI:
         plt.scatter(
             *projection.T, s=50, linewidth=0, c=cluster_member_colors, alpha=0.25
         )
-
-        # km = KMeans(n_clusters=k, n_init="auto", random_state=0)
-        # labels = km.fit_predict(emb)  # labels[i] がクラスタID
-
-        # clusters: Dict[str, List[str]] = {}
-        # for paper in papers:
-        #     keywords = paper.get("keywords") or []
-        #     main_keyword = keywords[0] if keywords else "general"
-        #     clusters.setdefault(main_keyword, []).append(paper.get("id"))
 
         clusters = []
         for index, paper_ids in enumerate(clusters.items()):

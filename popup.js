@@ -395,7 +395,8 @@ class LiteratureManager {
                     algorithm: 'hdbscan',
                     similarity_threshold: 0.7,
                     maxClusters: 10,
-                    minClusterSize: 2
+                    minClusterSize: 2,
+                    minSamples: 1
                 }
             };
             this.culustringResult = await chrome.runtime.sendMessage({
@@ -405,7 +406,10 @@ class LiteratureManager {
             console.log('Clustering result:', this.culustringResult);
             this.currentClusters = this.culustringResult?.data?.clusters || [];
             this.clusterImage = this.culustringResult?.data?.img_b64 || null;
-            document.getElementById("plot").src = "data:image/png;base64," + img_b64;
+            if (this.clusterImage) {
+                document.getElementById("plot").src = "data:image/png;base64," + this.clusterImage;
+            }
+            console.log(`Generated ${this.currentClusters}`);
 
             // Save clusters
             await chrome.storage.local.set({
